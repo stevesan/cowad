@@ -137,6 +137,22 @@
       font-size: 14px;
       padding: 32px 0;
     }
+
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #5c0d1a;
+      color: #ffaab2;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-size: 13px;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+    #toast.show { opacity: 1; }
   </style>
 </head>
 <body>
@@ -160,6 +176,7 @@
   </div>
 
 </div>
+<div id="toast"></div>
 
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -180,6 +197,16 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+// ─── Toast ────────────────────────────────────────────────────────────────────
+let toastTimer;
+function showError(msg) {
+  const toast = document.getElementById('toast');
+  toast.textContent = msg;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 4000);
+}
+
 // ─── DOM helpers ──────────────────────────────────────────────────────────────
 const list    = document.getElementById('todo-list');
 const empty   = document.getElementById('empty');
@@ -199,11 +226,17 @@ function createTodoEl(key, { text, done }) {
   `;
 
   li.querySelector('input').addEventListener('change', e => {
-    db.ref('todos/' + key + '/done').set(e.target.checked);
+    const checked = e.target.checked;
+    db.ref('todos/' + key + '/done').set(checked).catch(() => {
+      e.target.checked = !checked;
+      showError('Failed to update — try again.');
+    });
   });
 
   li.querySelector('.delete-btn').addEventListener('click', () => {
-    db.ref('todos/' + key).remove();
+    db.ref('todos/' + key).remove().catch(() => {
+      showError('Failed to delete — try again.');
+    });
   });
 
   li.querySelector('.todo-text').addEventListener('dblclick', () => {
@@ -215,18 +248,23 @@ function createTodoEl(key, { text, done }) {
     input.focus();
     input.select();
 
+    let committed = false;
     function commit() {
+      if (committed) return;
+      committed = true;
       const newText = input.value.trim();
-      if (newText && newText !== span.textContent) {
-        db.ref('todos/' + key + '/text').set(newText);
-        span.textContent = newText;
-      }
       input.replaceWith(span);
+      if (!newText || newText === span.textContent) return;
+      const original = span.textContent;
+      db.ref('todos/' + key + '/text').set(newText).catch(() => {
+        span.textContent = original;
+        showError('Failed to save — change reverted.');
+      });
     }
 
     input.addEventListener('keydown', e => {
       if (e.key === 'Enter')  { e.preventDefault(); commit(); }
-      if (e.key === 'Escape') { input.replaceWith(span); }
+      if (e.key === 'Escape') { committed = true; input.replaceWith(span); }
     });
     input.addEventListener('blur', commit);
   });
@@ -244,8 +282,11 @@ document.getElementById('add-form').addEventListener('submit', e => {
   const input = document.getElementById('add-input');
   const text  = input.value.trim();
   if (!text) return;
-  db.ref('todos').push({ text, done: false, createdAt: Date.now() });
   input.value = '';
+  db.ref('todos').push({ text, done: false, createdAt: Date.now() }).catch(() => {
+    input.value = text;
+    showError('Failed to add — try again.');
+  });
 });
 
 // ─── Firebase: sync todos ─────────────────────────────────────────────────────
