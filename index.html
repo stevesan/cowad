@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Draw Together</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #1a1a2e;
+      color: #eee;
+      font-family: system-ui, sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    #toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 16px;
+      background: #16213e;
+      border-bottom: 1px solid #0f3460;
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    #toolbar h1 { font-size: 15px; font-weight: 700; color: #e94560; }
+
+    .sep { width: 1px; height: 24px; background: #0f3460; flex-shrink: 0; }
+
+    .tool-group { display: flex; align-items: center; gap: 8px; }
+    .tool-group label { font-size: 12px; color: #888; }
+
+    input[type="color"] {
+      width: 34px; height: 34px;
+      border: 2px solid #0f3460; border-radius: 6px;
+      cursor: pointer; padding: 1px; background: none;
+    }
+    input[type="color"]:hover { border-color: #e94560; }
+
+    input[type="range"] { width: 80px; accent-color: #e94560; cursor: pointer; }
+
+    #sizeVal {
+      font-size: 12px; color: #aaa; min-width: 28px;
+    }
+
+    /* Color swatches */
+    #swatches { display: flex; gap: 5px; }
+    .swatch {
+      width: 22px; height: 22px; border-radius: 50%;
+      cursor: pointer; border: 2px solid transparent;
+      transition: transform .1s, border-color .1s;
+      flex-shrink: 0;
+    }
+    .swatch:hover { transform: scale(1.15); }
+    .swatch.active { border-color: white; }
+
+    button {
+      padding: 5px 13px; border: none; border-radius: 5px;
+      cursor: pointer; font-size: 13px; font-weight: 500;
+      transition: background .15s;
+    }
+
+    #clearBtn { background: #e94560; color: white; }
+    #clearBtn:hover { background: #c73652; }
+
+    #meta { display: flex; align-items: center; gap: 10px; margin-left: auto; font-size: 12px; }
+
+    #users { color: #aaa; }
+
+    #status {
+      padding: 2px 9px; border-radius: 10px;
+      font-size: 11px; font-weight: 500;
+      background: #0f3460; color: #aaa;
+    }
+    #status.connected    { background: #0d5c2e; color: #6dffab; }
+    #status.disconnected { background: #5c0d1a; color: #ffaab2; }
+
+    canvas {
+      flex: 1;
+      display: block;
+      cursor: crosshair;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>✏ Draw Together</h1>
+
+  <div class="sep"></div>
+
+  <div class="tool-group">
+    <label>Color</label>
+    <input type="color" id="colorPicker" value="#e94560">
+    <div id="swatches"></div>
+  </div>
+
+  <div class="sep"></div>
+
+  <div class="tool-group">
+    <label>Size</label>
+    <input type="range" id="sizeSlider" min="1" max="40" value="4">
+    <span id="sizeVal">4px</span>
+  </div>
+
+  <div class="sep"></div>
+
+  <button id="clearBtn">Clear All</button>
+
+  <div id="meta">
+    <span id="users">— online</span>
+    <span id="status">Connecting…</span>
+  </div>
+</div>
+
+<canvas id="canvas"></canvas>
+
+<!-- Firebase SDK (v10 compat) -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+
+<script>
+// ─── 1. Firebase Config ───────────────────────────────────────────────────────
+// Replace all values below with your project's Firebase config.
+// Find it in the Firebase Console → Project Settings → Your apps → SDK setup.
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyBTlTozCk6sPYJZmnWFGb_8ovB8IS_CEEc",
+  authDomain: "rdb-test-2513b.firebaseapp.com",
+  databaseURL: "https://rdb-test-2513b-default-rtdb.firebaseio.com",
+  projectId: "rdb-test-2513b",
+  storageBucket: "rdb-test-2513b.firebasestorage.app",
+  messagingSenderId: "395624694880",
+  appId: "1:395624694880:web:6c7750f08776cfd71daf05"
+};
+
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+// ─── 2. Canvas Setup ──────────────────────────────────────────────────────────
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+// Set canvas to match its CSS layout size once on load.
+// If you need dynamic resize, swap the ImageData approach for a redraw-from-db strategy.
+function initCanvas() {
+  canvas.width  = canvas.offsetWidth;
+  canvas.height = canvas.offsetHeight;
+}
+initCanvas();
+window.addEventListener('resize', initCanvas); // clears canvas on resize — acceptable for a demo
+
+// ─── 3. State ─────────────────────────────────────────────────────────────────
+const uid = Math.random().toString(36).slice(2, 10); // unique session id
+let color   = '#e94560';
+let size    = 4;
+let drawing = false;
+let lastX = 0, lastY = 0;
+let lastClearedAt = Date.now(); // ignore clears that happened before this session
+const mySegments = new Set();   // keys of segments we pushed (skip re-drawing locally)
+
+// ─── 4. Color Swatches ────────────────────────────────────────────────────────
+const SWATCHES = ['#e94560','#f5a623','#f8e71c','#7ed321','#4a90e2','#9b59b6','#ffffff','#333333'];
+const swatchContainer = document.getElementById('swatches');
+const colorPicker     = document.getElementById('colorPicker');
+
+SWATCHES.forEach(c => {
+  const el = document.createElement('div');
+  el.className = 'swatch' + (c === color ? ' active' : '');
+  el.style.background = c;
+  el.title = c;
+  el.addEventListener('click', () => {
+    setColor(c);
+    colorPicker.value = c;
+  });
+  swatchContainer.appendChild(el);
+});
+
+function setColor(c) {
+  color = c;
+  document.querySelectorAll('.swatch').forEach(s =>
+    s.classList.toggle('active', s.style.background === hexToRgb(c) || s.title === c)
+  );
+}
+
+// helper: normalize hex so the active check works after browser converts values
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16),
+        g = parseInt(hex.slice(3,5),16),
+        b = parseInt(hex.slice(5,7),16);
+  return `rgb(${r}, ${g}, ${b})`;
+}
+
+colorPicker.addEventListener('input', e => setColor(e.target.value));
+
+// ─── 5. Size Slider ───────────────────────────────────────────────────────────
+const sizeSlider = document.getElementById('sizeSlider');
+const sizeVal    = document.getElementById('sizeVal');
+
+sizeSlider.addEventListener('input', e => {
+  size = +e.target.value;
+  sizeVal.textContent = size + 'px';
+});
+
+// ─── 6. Draw Functions ────────────────────────────────────────────────────────
+function drawSegment({ x0, y0, x1, y1, color, size }) {
+  ctx.beginPath();
+  ctx.moveTo(x0, y0);
+  ctx.lineTo(x1, y1);
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = size;
+  ctx.lineCap     = 'round';
+  ctx.lineJoin    = 'round';
+  ctx.stroke();
+}
+
+function clearCanvas() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// ─── 7. Mouse / Touch Input ───────────────────────────────────────────────────
+function getPos(e) {
+  const rect = canvas.getBoundingClientRect();
+  const src  = e.touches ? e.touches[0] : e;
+  return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+}
+
+function onStart(e) {
+  e.preventDefault();
+  drawing = true;
+  ({ x: lastX, y: lastY } = getPos(e));
+}
+
+function onMove(e) {
+  if (!drawing) return;
+  e.preventDefault();
+
+  const { x, y } = getPos(e);
+  const seg = { x0: lastX, y0: lastY, x1: x, y1: y, color, size, uid, t: Date.now() };
+
+  drawSegment(seg); // draw immediately (no lag)
+
+  const ref = db.ref('segments').push(seg);
+  mySegments.add(ref.key); // mark as ours so child_added skips it
+
+  lastX = x;
+  lastY = y;
+}
+
+function onEnd() { drawing = false; }
+
+canvas.addEventListener('mousedown',  onStart);
+canvas.addEventListener('mousemove',  onMove);
+canvas.addEventListener('mouseup',    onEnd);
+canvas.addEventListener('mouseleave', onEnd);
+canvas.addEventListener('touchstart', onStart, { passive: false });
+canvas.addEventListener('touchmove',  onMove,  { passive: false });
+canvas.addEventListener('touchend',   onEnd);
+
+// ─── 8. Firebase: Sync Drawing ───────────────────────────────────────────────
+// child_added fires for existing children on load AND new ones in real time.
+// We skip keys in mySegments (already drawn locally this session).
+// Tip: add .limitToLast(2000) after db.ref('segments') if history gets large.
+db.ref('segments').on('child_added', snap => {
+  if (mySegments.has(snap.key)) return;
+  drawSegment(snap.val());
+});
+
+// ─── 9. Firebase: Sync Clear ─────────────────────────────────────────────────
+document.getElementById('clearBtn').addEventListener('click', () => {
+  const now = Date.now();
+  lastClearedAt = now;
+  clearCanvas();
+  db.ref('segments').remove();
+  db.ref('meta/clearedAt').set(now);
+});
+
+db.ref('meta/clearedAt').on('value', snap => {
+  const t = snap.val() || 0;
+  if (t > lastClearedAt) {
+    lastClearedAt = t;
+    clearCanvas();
+  }
+});
+
+// ─── 10. Presence ────────────────────────────────────────────────────────────
+const presenceRef = db.ref('presence/' + uid);
+presenceRef.set({ uid, joinedAt: Date.now() });
+presenceRef.onDisconnect().remove();
+
+db.ref('presence').on('value', snap => {
+  const n = snap.numChildren();
+  document.getElementById('users').textContent = n + (n === 1 ? ' person' : ' people') + ' online';
+});
+
+// ─── 11. Connection Status ────────────────────────────────────────────────────
+const statusEl = document.getElementById('status');
+db.ref('.info/connected').on('value', snap => {
+  if (snap.val()) {
+    statusEl.textContent = 'Connected';
+    statusEl.className   = 'connected';
+  } else {
+    statusEl.textContent = 'Disconnected';
+    statusEl.className   = 'disconnected';
+  }
+});
+</script>
+</body>
+</html>
