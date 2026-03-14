@@ -34,6 +34,9 @@
     }
     #clearBtn { background: #e94560; color: white; }
     #clearBtn:hover { background: #c73652; }
+    #eraserBtn { background: #2a2a4a; color: #aaa; border: 1px solid #0f3460; }
+    #eraserBtn:hover { background: #3a3a5a; }
+    #eraserBtn.active { background: #f5a623; color: #1a1a2e; border-color: #f5a623; }
 
     #meta { display: flex; align-items: center; gap: 10px; margin-left: auto; font-size: 12px; }
     #users { color: #aaa; }
@@ -57,6 +60,7 @@
 
 <div id="toolbar">
   <h1>✏ Draw Together</h1>
+  <button id="eraserBtn">Eraser</button>
   <button id="clearBtn">Clear All</button>
   <div id="meta">
     <span id="users">— online</span>
@@ -94,26 +98,44 @@ function initCanvas() {
   canvas.height = canvas.offsetHeight;
 }
 initCanvas();
-window.addEventListener('resize', initCanvas);
+window.addEventListener('resize', () => {
+  initCanvas();
+  allSegments.forEach(renderSegment);
+});
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const uid = Math.random().toString(36).slice(2, 10);
+let erasing = false;
 let drawing = false;
 let lastX = 0, lastY = 0;
 let lastClearedAt = Date.now();
 const mySegments = new Set(); // skip re-drawing segments we already drew locally
+const allSegments = [];       // full history so we can redraw on resize
 
 // ─── Draw ─────────────────────────────────────────────────────────────────────
-function drawSegment({ x0, y0, x1, y1 }) {
+function renderSegment({ x0, y0, x1, y1, erase }) {
+  ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
   ctx.beginPath();
   ctx.moveTo(x0, y0);
   ctx.lineTo(x1, y1);
-  ctx.strokeStyle = '#e94560';
-  ctx.lineWidth   = 3;
+  ctx.strokeStyle = erase ? 'rgba(0,0,0,1)' : '#e94560';
+  ctx.lineWidth   = erase ? 20 : 3;
   ctx.lineCap     = 'round';
   ctx.lineJoin    = 'round';
   ctx.stroke();
+  ctx.globalCompositeOperation = 'source-over';
 }
+
+function drawSegment(seg) {
+  allSegments.push(seg);
+  renderSegment(seg);
+}
+
+document.getElementById('eraserBtn').addEventListener('click', () => {
+  erasing = !erasing;
+  document.getElementById('eraserBtn').classList.toggle('active', erasing);
+  canvas.style.cursor = erasing ? 'cell' : 'crosshair';
+});
 
 // ─── Input ────────────────────────────────────────────────────────────────────
 function getPos(e) {
@@ -130,7 +152,7 @@ canvas.addEventListener('mousedown', e => {
 canvas.addEventListener('mousemove', e => {
   if (!drawing) return;
   const { x, y } = getPos(e);
-  const seg = { x0: lastX, y0: lastY, x1: x, y1: y, uid, t: Date.now() };
+  const seg = { x0: lastX, y0: lastY, x1: x, y1: y, erase: erasing, uid, t: Date.now() };
 
   drawSegment(seg); // draw locally with no lag
 
@@ -156,6 +178,7 @@ db.ref('segments').on('child_added', snap => {
 // ─── Firebase: sync clear ─────────────────────────────────────────────────────
 document.getElementById('clearBtn').addEventListener('click', () => {
   lastClearedAt = Date.now();
+  allSegments.length = 0;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   db.ref('segments').remove();
   db.ref('meta/clearedAt').set(lastClearedAt);
@@ -165,6 +188,7 @@ db.ref('meta/clearedAt').on('value', snap => {
   const t = snap.val() || 0;
   if (t > lastClearedAt) {
     lastClearedAt = t;
+    allSegments.length = 0;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
   }
 });
