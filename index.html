@@ -225,6 +225,10 @@ function createTodoEl(key, { text, done }) {
     <button class="delete-btn" title="Delete">×</button>
   `;
 
+  // Keep a stable reference to the span so child_changed can update it
+  // even while it is temporarily detached from the DOM during editing.
+  li._textSpan = li.querySelector('.todo-text');
+
   li.querySelector('input').addEventListener('change', e => {
     const checked = e.target.checked;
     db.ref('todos/' + key + '/done').set(checked).catch(() => {
@@ -266,7 +270,6 @@ function createTodoEl(key, { text, done }) {
       if (e.key === 'Enter')  { e.preventDefault(); commit(); }
       if (e.key === 'Escape') { committed = true; input.replaceWith(span); }
     });
-    input.addEventListener('blur', commit);
   });
 
   return li;
@@ -303,8 +306,7 @@ db.ref('todos').on('child_changed', snap => {
   if (!li) return;
   li.className = 'todo-item' + (done ? ' done' : '');
   li.querySelector('input[type="checkbox"]').checked = done;
-  const span = li.querySelector('.todo-text');
-  if (span) span.textContent = text; // skip if currently being edited (span is replaced by input)
+  li._textSpan.textContent = text; // works even when span is detached during editing
 });
 
 db.ref('todos').on('child_removed', snap => {
@@ -314,6 +316,10 @@ db.ref('todos').on('child_removed', snap => {
   delete todoEls[snap.key];
   updateEmpty();
 });
+
+db.ref('todos').on('value', (snap) => {
+  console.log('todos value', snap.val());
+})
 
 // ─── Firebase: presence ───────────────────────────────────────────────────────
 const presenceRef = db.ref('presence/' + Math.random().toString(36).slice(2, 10));

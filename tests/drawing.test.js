@@ -4,92 +4,108 @@ const path = require('path');
 
 const PAGE_URL = pathToFileURL(path.resolve(__dirname, '..', 'index.html')).toString();
 
-// Injected before any page script runs — replaces the Firebase SDK with a no-op mock
-// so the app initialises without a real network connection.
+// Injected before page scripts. Replaces Firebase with a mock that:
+//  - stores listeners at window._on[path][event]
+//  - fires child_added synchronously when push() is called
+//  - returns Promises from push/set/remove so .catch() handlers work
 function firebaseMock() {
-  const makeRef = () => {
+  window._on = {};
+
+  const makeRef = (refPath) => {
     const ref = {
-      on:          (event, cb) => { if (event === 'value') cb({ val: () => null, numChildren: () => 0 }); return ref; },
-      once:        (event, cb) => { cb({ forEach: () => {}, val: () => null }); return ref; },
-      push:        ()          => ({ key: Math.random().toString(36).slice(2) }),
-      set:         ()          => ref,
-      remove:      ()          => ref,
-      onDisconnect: ()         => ({ remove: () => {} }),
+      on: (event, cb) => {
+        if (!window._on[refPath]) window._on[refPath] = {};
+        window._on[refPath][event] = cb;
+        if (event === 'value') {
+          if (refPath === '.info/connected') cb({ val: () => true });
+          else cb({ val: () => null, numChildren: () => 0 });
+        }
+        return ref;
+      },
+      push: (data) => {
+        const key = 'k' + Math.random().toString(36).slice(2, 8);
+        const cb  = window._on[refPath] && window._on[refPath]['child_added'];
+        if (cb) cb({ key, val: () => data });
+        return Promise.resolve({ key });
+      },
+      set:    () => Promise.resolve(),
+      remove: () => Promise.resolve(),
+      onDisconnect: () => ({ remove: () => {} }),
     };
     return ref;
   };
+
   window.firebase = {
     initializeApp: () => {},
-    database: () => ({ ref: () => makeRef() }),
+    database: () => ({ ref: (p) => makeRef(p || '') }),
   };
 }
 
-// Returns the number of non-transparent pixels on the canvas.
-function countDrawnPixels(page) {
-  return page.evaluate(() => {
-    const canvas = document.getElementById('canvas');
-    const data = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data;
-    let count = 0;
-    for (let i = 3; i < data.length; i += 4) {
-      if (data[i] > 0) count++;
-    }
-    return count;
-  });
-}
-
-// Draw a short diagonal line across the centre of the canvas.
-async function drawLine(page) {
-  const box = await page.locator('canvas').boundingBox();
-  const cx = box.x + box.width  / 2;
-  const cy = box.y + box.height / 2;
-  await page.mouse.move(cx - 60, cy - 40);
-  await page.mouse.down();
-  await page.mouse.move(cx + 60, cy + 40, { steps: 20 });
-  await page.mouse.up();
-}
-
 test.beforeEach(async ({ page }) => {
-  // Install mock before page scripts, then block the CDN scripts so they
-  // can't overwrite window.firebase.
   await page.addInitScript(firebaseMock);
-  await page.route('**/gstatic.com/firebasejs/**', route =>
+  // Use a function matcher to reliably catch all Firebase CDN URLs regardless of version/path.
+  await page.route(/firebasejs/, route =>
     route.fulfill({ status: 200, contentType: 'application/javascript', body: '' })
   );
   await page.goto(PAGE_URL);
+  // Wait until the app's inline script has run and registered the Firebase listeners.
+  await page.waitForFunction(() =>
+    window._on && window._on['todos'] && typeof window._on['todos']['child_added'] === 'function'
+  );
 });
 
-// ── Regression: the bug that prompted this test ───────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-test('drawn segments survive a window resize', async ({ page }) => {
-  await drawLine(page);
+function injectTodo(page, key, text, done = false) {
+  return page.evaluate(({ key, text, done }) => {
+    window._on['todos']['child_added']({ key, val: () => ({ text, done, createdAt: 1 }) });
+  }, { key, text, done });
+}
 
-  const before = await countDrawnPixels(page);
-  expect(before).toBeGreaterThan(0);
+function remoteChange(page, key, text, done = false) {
+  return page.evaluate(({ key, text, done }) => {
+    window._on['todos']['child_changed']({ key, val: () => ({ text, done, createdAt: 2 }) });
+  }, { key, text, done });
+}
 
-  await page.setViewportSize({ width: 900, height: 400 });
+// ── Regression: concurrent edit ───────────────────────────────────────────────
 
-  const after = await countDrawnPixels(page);
-  expect(after).toBeGreaterThan(0);
+test('shows remote edit after user cancels their own local edit', async ({ page }) => {
+  await injectTodo(page, 'todo1', 'original text');
+
+  // User A starts editing
+  await page.dblclick('.todo-text');
+  await expect(page.locator('.todo-edit')).toBeVisible();
+
+  // User B commits a change while A is still in the edit input
+  await remoteChange(page, 'todo1', 'updated by B');
+
+  // User A cancels — should see B's version, not "original text"
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.todo-text')).toHaveText('updated by B');
 });
 
-// ── Related behaviour ─────────────────────────────────────────────────────────
-
-test('canvas is blank before anything is drawn', async ({ page }) => {
-  expect(await countDrawnPixels(page)).toBe(0);
+test('shows remote edit immediately when nobody is editing', async ({ page }) => {
+  await injectTodo(page, 'todo1', 'original text');
+  await remoteChange(page, 'todo1', 'updated by B');
+  await expect(page.locator('.todo-text')).toHaveText('updated by B');
 });
 
-test('clear wipes the canvas', async ({ page }) => {
-  await drawLine(page);
-  expect(await countDrawnPixels(page)).toBeGreaterThan(0);
+// ── Basic todo behaviour ───────────────────────────────────────────────────────
 
-  await page.click('#clearBtn');
-  expect(await countDrawnPixels(page)).toBe(0);
+test('shows empty state before any todos', async ({ page }) => {
+  await expect(page.locator('#empty')).toBeVisible();
 });
 
-test('canvas stays blank after clear + resize', async ({ page }) => {
-  await drawLine(page);
-  await page.click('#clearBtn');
+test('adding a todo makes it appear in the list', async ({ page }) => {
+  await page.fill('#add-input', 'buy milk');
+  await page.press('#add-input', 'Enter');
+  await expect(page.locator('.todo-text')).toHaveText('buy milk');
+  await expect(page.locator('#empty')).toBeHidden();
+});
 
-  await page.setViewportSize({ width: 900, height: 400 });
-  expect(await countDrawnPixels(page)).toBe(0);
+test('input is cleared after adding a todo', async ({ page }) => {
+  await page.fill('#add-input', 'buy milk');
+  await page.press('#add-input', 'Enter');
+  await expect(page.locator('#add-input')).toHaveValue('');
 });
