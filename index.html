@@ -3,43 +3,39 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Draw Together</title>
+  <title>Todo Together</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
     body {
       background: #1a1a2e;
+      color: #eee;
       font-family: system-ui, sans-serif;
-      height: 100vh;
+      min-height: 100vh;
       display: flex;
       flex-direction: column;
-      overflow: hidden;
-    }
-
-    #toolbar {
-      display: flex;
       align-items: center;
+      padding: 40px 16px;
+    }
+
+    #app {
+      width: 100%;
+      max-width: 540px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
       gap: 12px;
-      padding: 8px 16px;
-      background: #16213e;
-      border-bottom: 1px solid #0f3460;
-      flex-shrink: 0;
     }
-
-    #toolbar h1 { font-size: 15px; font-weight: 700; color: #e94560; }
-
-    button {
-      padding: 5px 13px; border: none; border-radius: 5px;
-      cursor: pointer; font-size: 13px; font-weight: 500;
-    }
-    #clearBtn { background: #e94560; color: white; }
-    #clearBtn:hover { background: #c73652; }
-    #eraserBtn { background: #2a2a4a; color: #aaa; border: 1px solid #0f3460; }
-    #eraserBtn:hover { background: #3a3a5a; }
-    #eraserBtn.active { background: #f5a623; color: #1a1a2e; border-color: #f5a623; }
-
-    #meta { display: flex; align-items: center; gap: 10px; margin-left: auto; font-size: 12px; }
-    #users { color: #aaa; }
+    header h1 { font-size: 22px; font-weight: 700; color: #e94560; }
+    #meta { display: flex; align-items: center; gap: 10px; font-size: 12px; }
+    #users { color: #888; }
     #status {
       padding: 2px 9px; border-radius: 10px;
       font-size: 11px; font-weight: 500;
@@ -48,27 +44,110 @@
     #status.connected    { background: #0d5c2e; color: #6dffab; }
     #status.disconnected { background: #5c0d1a; color: #ffaab2; }
 
-    canvas {
+    /* Add form */
+    #add-form {
+      display: flex;
+      gap: 8px;
+    }
+    #add-form input {
       flex: 1;
-      display: block;
-      cursor: crosshair;
-      touch-action: none;
+      padding: 10px 14px;
+      border-radius: 6px;
+      border: 1px solid #0f3460;
+      background: #16213e;
+      color: #eee;
+      font-size: 14px;
+      outline: none;
+    }
+    #add-form input:focus { border-color: #e94560; }
+    #add-form input::placeholder { color: #555; }
+    #add-form button {
+      padding: 10px 18px;
+      background: #e94560;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #add-form button:hover { background: #c73652; }
+
+    /* List */
+    #todo-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .todo-item {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: #16213e;
+      border: 1px solid #0f3460;
+      border-radius: 8px;
+    }
+
+    .todo-item input[type="checkbox"] {
+      width: 18px; height: 18px;
+      accent-color: #e94560;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+
+    .todo-text {
+      flex: 1;
+      font-size: 14px;
+      line-height: 1.4;
+    }
+    .todo-item.done .todo-text {
+      text-decoration: line-through;
+      color: #555;
+    }
+
+    .delete-btn {
+      background: none;
+      border: none;
+      color: #555;
+      font-size: 18px;
+      cursor: pointer;
+      line-height: 1;
+      padding: 0 2px;
+      flex-shrink: 0;
+    }
+    .delete-btn:hover { color: #e94560; }
+
+    #empty {
+      text-align: center;
+      color: #555;
+      font-size: 14px;
+      padding: 32px 0;
     }
   </style>
 </head>
 <body>
+<div id="app">
 
-<div id="toolbar">
-  <h1>✏ Draw Together</h1>
-  <button id="eraserBtn">Eraser</button>
-  <button id="clearBtn">Clear All</button>
-  <div id="meta">
-    <span id="users">— online</span>
-    <span id="status">Connecting…</span>
+  <header>
+    <h1>Todo Together</h1>
+    <div id="meta">
+      <span id="users">— online</span>
+      <span id="status">Connecting…</span>
+    </div>
+  </header>
+
+  <form id="add-form">
+    <input type="text" id="add-input" placeholder="Add a todo…" autocomplete="off">
+    <button type="submit">Add</button>
+  </form>
+
+  <div id="todo-list">
+    <div id="empty">No todos yet.</div>
   </div>
-</div>
 
-<canvas id="canvas"></canvas>
+</div>
 
 <!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -89,112 +168,76 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// ─── Canvas ───────────────────────────────────────────────────────────────────
-const canvas = document.getElementById('canvas');
-const ctx    = canvas.getContext('2d');
+// ─── DOM helpers ──────────────────────────────────────────────────────────────
+const list    = document.getElementById('todo-list');
+const empty   = document.getElementById('empty');
+const todoEls = {}; // key → li element
 
-function initCanvas() {
-  canvas.width  = canvas.offsetWidth;
-  canvas.height = canvas.offsetHeight;
-}
-initCanvas();
-window.addEventListener('resize', () => {
-  initCanvas();
-  allSegments.forEach(renderSegment);
-});
-
-// ─── State ────────────────────────────────────────────────────────────────────
-const uid = Math.random().toString(36).slice(2, 10);
-let erasing = false;
-let drawing = false;
-let lastX = 0, lastY = 0;
-let lastClearedAt = Date.now();
-const mySegments = new Set(); // skip re-drawing segments we already drew locally
-const allSegments = [];       // full history so we can redraw on resize
-
-// ─── Draw ─────────────────────────────────────────────────────────────────────
-function renderSegment({ x0, y0, x1, y1, erase }) {
-  ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
-  ctx.beginPath();
-  ctx.moveTo(x0, y0);
-  ctx.lineTo(x1, y1);
-  ctx.strokeStyle = erase ? 'rgba(0,0,0,1)' : '#e94560';
-  ctx.lineWidth   = erase ? 20 : 3;
-  ctx.lineCap     = 'round';
-  ctx.lineJoin    = 'round';
-  ctx.stroke();
-  ctx.globalCompositeOperation = 'source-over';
+function updateEmpty() {
+  empty.style.display = Object.keys(todoEls).length === 0 ? 'block' : 'none';
 }
 
-function drawSegment(seg) {
-  allSegments.push(seg);
-  renderSegment(seg);
+function createTodoEl(key, { text, done }) {
+  const li = document.createElement('li');
+  li.className = 'todo-item' + (done ? ' done' : '');
+  li.innerHTML = `
+    <input type="checkbox" ${done ? 'checked' : ''}>
+    <span class="todo-text">${escapeHtml(text)}</span>
+    <button class="delete-btn" title="Delete">×</button>
+  `;
+
+  li.querySelector('input').addEventListener('change', e => {
+    db.ref('todos/' + key + '/done').set(e.target.checked);
+  });
+
+  li.querySelector('.delete-btn').addEventListener('click', () => {
+    db.ref('todos/' + key).remove();
+  });
+
+  return li;
 }
 
-document.getElementById('eraserBtn').addEventListener('click', () => {
-  erasing = !erasing;
-  document.getElementById('eraserBtn').classList.toggle('active', erasing);
-  canvas.style.cursor = erasing ? 'cell' : 'crosshair';
-});
-
-// ─── Input ────────────────────────────────────────────────────────────────────
-function getPos(e) {
-  const rect = canvas.getBoundingClientRect();
-  const src  = e.touches ? e.touches[0] : e;
-  return { x: src.clientX - rect.left, y: src.clientY - rect.top };
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-canvas.addEventListener('mousedown', e => {
-  drawing = true;
-  ({ x: lastX, y: lastY } = getPos(e));
+// ─── Add todo ─────────────────────────────────────────────────────────────────
+document.getElementById('add-form').addEventListener('submit', e => {
+  e.preventDefault();
+  const input = document.getElementById('add-input');
+  const text  = input.value.trim();
+  if (!text) return;
+  db.ref('todos').push({ text, done: false, createdAt: Date.now() });
+  input.value = '';
 });
 
-canvas.addEventListener('mousemove', e => {
-  if (!drawing) return;
-  const { x, y } = getPos(e);
-  const seg = { x0: lastX, y0: lastY, x1: x, y1: y, erase: erasing, uid, t: Date.now() };
-
-  drawSegment(seg); // draw locally with no lag
-
-  const ref = db.ref('segments').push(seg); // sync to Firebase
-  mySegments.add(ref.key);
-
-  lastX = x; lastY = y;
+// ─── Firebase: sync todos ─────────────────────────────────────────────────────
+db.ref('todos').on('child_added', snap => {
+  const li = createTodoEl(snap.key, snap.val());
+  todoEls[snap.key] = li;
+  list.appendChild(li);
+  updateEmpty();
 });
 
-canvas.addEventListener('mouseup',    () => drawing = false);
-canvas.addEventListener('mouseleave', () => drawing = false);
-canvas.addEventListener('touchstart', e => { e.preventDefault(); drawing = true; ({ x: lastX, y: lastY } = getPos(e)); }, { passive: false });
-canvas.addEventListener('touchmove',  e => { e.preventDefault(); if (drawing) canvas.dispatchEvent(Object.assign(new Event('mousemove'), { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY })); }, { passive: false });
-canvas.addEventListener('touchend',   () => drawing = false);
-
-// ─── Firebase: sync drawing ───────────────────────────────────────────────────
-// child_added fires for all existing segments on load, then new ones in real time
-db.ref('segments').on('child_added', snap => {
-  if (mySegments.has(snap.key)) return; // already drawn locally
-  drawSegment(snap.val());
+db.ref('todos').on('child_changed', snap => {
+  const { text, done } = snap.val();
+  const li = todoEls[snap.key];
+  if (!li) return;
+  li.className = 'todo-item' + (done ? ' done' : '');
+  li.querySelector('input').checked = done;
+  li.querySelector('.todo-text').textContent = text;
 });
 
-// ─── Firebase: sync clear ─────────────────────────────────────────────────────
-document.getElementById('clearBtn').addEventListener('click', () => {
-  lastClearedAt = Date.now();
-  allSegments.length = 0;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  db.ref('segments').remove();
-  db.ref('meta/clearedAt').set(lastClearedAt);
-});
-
-db.ref('meta/clearedAt').on('value', snap => {
-  const t = snap.val() || 0;
-  if (t > lastClearedAt) {
-    lastClearedAt = t;
-    allSegments.length = 0;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-  }
+db.ref('todos').on('child_removed', snap => {
+  const li = todoEls[snap.key];
+  if (!li) return;
+  li.remove();
+  delete todoEls[snap.key];
+  updateEmpty();
 });
 
 // ─── Firebase: presence ───────────────────────────────────────────────────────
-const presenceRef = db.ref('presence/' + uid);
+const presenceRef = db.ref('presence/' + Math.random().toString(36).slice(2, 10));
 presenceRef.set(true);
 presenceRef.onDisconnect().remove();
 
