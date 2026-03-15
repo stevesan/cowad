@@ -71,19 +71,82 @@
   <button class="tool-btn" data-tool="sector" title="Create Sector (E)">E</button>
   <button class="tool-btn" data-tool="thing"  title="Place Thing (T)">T</button>
   <select id="thing-type-sel">
-    <option value="1">Player 1 Start</option>
-    <option value="3004">Zombieman</option>
-    <option value="9">Shotgun Guy</option>
-    <option value="3001">Imp</option>
-    <option value="3002">Demon</option>
-    <option value="3003">Baron of Hell</option>
-    <option value="16">Cyberdemon</option>
-    <option value="7">Spider Mastermind</option>
-    <option value="2001">Shotgun</option>
-    <option value="2002">Chaingun</option>
-    <option value="2006">BFG 9000</option>
-    <option value="2011">Health Bonus</option>
-    <option value="2012">Medikit</option>
+    <optgroup label="Players">
+      <option value="1">Player 1 Start</option>
+      <option value="2">Player 2 Start</option>
+      <option value="3">Player 3 Start</option>
+      <option value="4">Player 4 Start</option>
+      <option value="11">Deathmatch Start</option>
+    </optgroup>
+    <optgroup label="Doom Monsters">
+      <option value="3004">Zombieman</option>
+      <option value="9">Shotgun Guy</option>
+      <option value="3001">Imp</option>
+      <option value="3002">Demon</option>
+      <option value="58">Spectre</option>
+      <option value="3005">Cacodemon</option>
+      <option value="3003">Baron of Hell</option>
+      <option value="3006">Lost Soul</option>
+      <option value="16">Cyberdemon</option>
+      <option value="7">Spider Mastermind</option>
+    </optgroup>
+    <optgroup label="Doom 2 Monsters">
+      <option value="65">Chaingun Guy</option>
+      <option value="64">Arch-Vile</option>
+      <option value="66">Revenant</option>
+      <option value="67">Mancubus</option>
+      <option value="68">Arachnotron</option>
+      <option value="69">Hell Knight</option>
+      <option value="71">Pain Elemental</option>
+      <option value="84">Wolfenstein SS</option>
+    </optgroup>
+    <optgroup label="Weapons">
+      <option value="2005">Chainsaw</option>
+      <option value="2001">Shotgun</option>
+      <option value="82">Super Shotgun</option>
+      <option value="2002">Chaingun</option>
+      <option value="2003">Rocket Launcher</option>
+      <option value="2004">Plasma Rifle</option>
+      <option value="2006">BFG 9000</option>
+    </optgroup>
+    <optgroup label="Ammo">
+      <option value="2007">Clip</option>
+      <option value="2048">Box of Bullets</option>
+      <option value="2008">Shells</option>
+      <option value="2049">Box of Shells</option>
+      <option value="2010">Rocket</option>
+      <option value="2046">Box of Rockets</option>
+      <option value="2047">Energy Cell</option>
+      <option value="17">Energy Cell Pack</option>
+    </optgroup>
+    <optgroup label="Health">
+      <option value="2014">Health Bonus</option>
+      <option value="2011">Stimpack</option>
+      <option value="2012">Medikit</option>
+      <option value="2013">Soulsphere</option>
+      <option value="83">Megasphere</option>
+    </optgroup>
+    <optgroup label="Armor">
+      <option value="2015">Armor Bonus</option>
+      <option value="2018">Green Armor</option>
+      <option value="2019">Blue Armor</option>
+    </optgroup>
+    <optgroup label="Keys">
+      <option value="5">Blue Keycard</option>
+      <option value="13">Red Keycard</option>
+      <option value="6">Yellow Keycard</option>
+      <option value="40">Blue Skull Key</option>
+      <option value="38">Red Skull Key</option>
+      <option value="39">Yellow Skull Key</option>
+    </optgroup>
+    <optgroup label="Power-ups">
+      <option value="2022">Invulnerability</option>
+      <option value="2023">Berserk</option>
+      <option value="2024">Invisibility</option>
+      <option value="2025">Radiation Suit</option>
+      <option value="2026">Computer Map</option>
+      <option value="2045">Light Goggles</option>
+    </optgroup>
   </select>
   <div class="sep"></div>
   <button id="wad-btn" style="background:#1a1a2e;border:1px solid #446;color:#88f;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Export WAD</button>
@@ -126,21 +189,84 @@ function mapRef(col) { return db.ref('map/' + col); }
 const GRID = 32;
 const SNAP = 8;
 const THINGS = {
-  1:    { name: 'Player 1 Start', cat: 'player', r: 16 },
-  3004: { name: 'Zombieman',      cat: 'enemy',  r: 20 },
-  9:    { name: 'Shotgun Guy',    cat: 'enemy',  r: 20 },
-  3001: { name: 'Imp',           cat: 'enemy',  r: 20 },
-  3002: { name: 'Demon',         cat: 'enemy',  r: 30 },
-  3003: { name: 'Baron of Hell', cat: 'enemy',  r: 24 },
-  16:   { name: 'Cyberdemon',    cat: 'enemy',  r: 40 },
-  7:    { name: 'Spider Mastermind', cat: 'enemy', r: 128 },
-  2001: { name: 'Shotgun',       cat: 'weapon', r: 10 },
-  2002: { name: 'Chaingun',      cat: 'weapon', r: 10 },
-  2006: { name: 'BFG 9000',      cat: 'weapon', r: 10 },
-  2011: { name: 'Health Bonus',  cat: 'health', r: 10 },
-  2012: { name: 'Medikit',       cat: 'health', r: 10 },
+  // Players / starts
+  1:    { name: 'Player 1 Start',   cat: 'player',  r: 16 },
+  2:    { name: 'Player 2 Start',   cat: 'player',  r: 16 },
+  3:    { name: 'Player 3 Start',   cat: 'player',  r: 16 },
+  4:    { name: 'Player 4 Start',   cat: 'player',  r: 16 },
+  11:   { name: 'Deathmatch Start', cat: 'player',  r: 16 },
+  // Doom monsters
+  3004: { name: 'Zombieman',        cat: 'enemy',   r: 20 },
+  9:    { name: 'Shotgun Guy',      cat: 'enemy',   r: 20 },
+  3001: { name: 'Imp',             cat: 'enemy',   r: 20 },
+  3002: { name: 'Demon',           cat: 'enemy',   r: 30 },
+  58:   { name: 'Spectre',         cat: 'enemy',   r: 30 },
+  3005: { name: 'Cacodemon',       cat: 'enemy',   r: 31 },
+  3003: { name: 'Baron of Hell',   cat: 'enemy',   r: 24 },
+  3006: { name: 'Lost Soul',       cat: 'enemy',   r: 16 },
+  16:   { name: 'Cyberdemon',      cat: 'enemy',   r: 40 },
+  7:    { name: 'Spider Mastermind',cat: 'enemy',   r: 128},
+  // Doom 2 monsters
+  65:   { name: 'Chaingun Guy',    cat: 'enemy',   r: 20 },
+  64:   { name: 'Arch-Vile',       cat: 'enemy',   r: 20 },
+  66:   { name: 'Revenant',        cat: 'enemy',   r: 20 },
+  67:   { name: 'Mancubus',        cat: 'enemy',   r: 48 },
+  68:   { name: 'Arachnotron',     cat: 'enemy',   r: 64 },
+  69:   { name: 'Hell Knight',     cat: 'enemy',   r: 24 },
+  71:   { name: 'Pain Elemental',  cat: 'enemy',   r: 31 },
+  84:   { name: 'Wolfenstein SS',  cat: 'enemy',   r: 20 },
+  // Weapons
+  2005: { name: 'Chainsaw',        cat: 'weapon',  r: 10 },
+  2001: { name: 'Shotgun',         cat: 'weapon',  r: 10 },
+  82:   { name: 'Super Shotgun',   cat: 'weapon',  r: 10 },
+  2002: { name: 'Chaingun',        cat: 'weapon',  r: 10 },
+  2003: { name: 'Rocket Launcher', cat: 'weapon',  r: 10 },
+  2004: { name: 'Plasma Rifle',    cat: 'weapon',  r: 10 },
+  2006: { name: 'BFG 9000',        cat: 'weapon',  r: 10 },
+  // Ammo
+  2007: { name: 'Clip',            cat: 'ammo',    r: 10 },
+  2048: { name: 'Box of Bullets',  cat: 'ammo',    r: 10 },
+  2008: { name: 'Shells',          cat: 'ammo',    r: 10 },
+  2049: { name: 'Box of Shells',   cat: 'ammo',    r: 10 },
+  2010: { name: 'Rocket',          cat: 'ammo',    r: 10 },
+  2046: { name: 'Box of Rockets',  cat: 'ammo',    r: 10 },
+  2047: { name: 'Energy Cell',     cat: 'ammo',    r: 10 },
+  17:   { name: 'Energy Cell Pack',cat: 'ammo',    r: 10 },
+  // Health
+  2014: { name: 'Health Bonus',    cat: 'health',  r: 10 },
+  2011: { name: 'Stimpack',        cat: 'health',  r: 10 },
+  2012: { name: 'Medikit',         cat: 'health',  r: 10 },
+  2013: { name: 'Soulsphere',      cat: 'health',  r: 10 },
+  83:   { name: 'Megasphere',      cat: 'health',  r: 10 },
+  // Armor
+  2015: { name: 'Armor Bonus',     cat: 'armor',   r: 10 },
+  2018: { name: 'Green Armor',     cat: 'armor',   r: 10 },
+  2019: { name: 'Blue Armor',      cat: 'armor',   r: 10 },
+  // Keys
+  5:    { name: 'Blue Keycard',    cat: 'key',     r: 10 },
+  13:   { name: 'Red Keycard',     cat: 'key',     r: 10 },
+  6:    { name: 'Yellow Keycard',  cat: 'key',     r: 10 },
+  40:   { name: 'Blue Skull Key',  cat: 'key',     r: 10 },
+  38:   { name: 'Red Skull Key',   cat: 'key',     r: 10 },
+  39:   { name: 'Yellow Skull Key',cat: 'key',     r: 10 },
+  // Power-ups
+  2022: { name: 'Invulnerability', cat: 'powerup', r: 10 },
+  2023: { name: 'Berserk',         cat: 'powerup', r: 10 },
+  2024: { name: 'Invisibility',    cat: 'powerup', r: 10 },
+  2025: { name: 'Radiation Suit',  cat: 'powerup', r: 10 },
+  2026: { name: 'Computer Map',    cat: 'powerup', r: 10 },
+  2045: { name: 'Light Goggles',   cat: 'powerup', r: 10 },
 };
-const CAT_COLOR = { player: '#0f0', enemy: '#f44', weapon: '#fa0', health: '#4af' };
+const CAT_COLOR = {
+  player:  '#0f0',
+  enemy:   '#f44',
+  weapon:  '#fa0',
+  ammo:    '#f80',
+  health:  '#4af',
+  armor:   '#4ff',
+  key:     '#ff4',
+  powerup: '#f4f',
+};
 const FLAG_BITS = [
   { bit: 1,  label: 'Impassable' },
   { bit: 4,  label: 'Two-Sided'  },
