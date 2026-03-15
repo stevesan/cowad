@@ -72,11 +72,13 @@
   <button class="tool-btn" data-tool="thing"  title="Place Thing (T)">T</button>
   <select id="thing-type-sel">
     <option value="1">Player 1 Start</option>
-    <option value="3008">Zombie Man</option>
+    <option value="3004">Zombieman</option>
     <option value="9">Shotgun Guy</option>
-    <option value="3004">Imp</option>
-    <option value="3001">Demon</option>
-    <option value="85">Cyberdemon</option>
+    <option value="3001">Imp</option>
+    <option value="3002">Demon</option>
+    <option value="3003">Baron of Hell</option>
+    <option value="16">Cyberdemon</option>
+    <option value="7">Spider Mastermind</option>
     <option value="2001">Shotgun</option>
     <option value="2002">Chaingun</option>
     <option value="2006">BFG 9000</option>
@@ -125,11 +127,13 @@ const GRID = 32;
 const SNAP = 8;
 const THINGS = {
   1:    { name: 'Player 1 Start', cat: 'player', r: 16 },
-  3008: { name: 'Zombie Man',     cat: 'enemy',  r: 20 },
+  3004: { name: 'Zombieman',      cat: 'enemy',  r: 20 },
   9:    { name: 'Shotgun Guy',    cat: 'enemy',  r: 20 },
-  3004: { name: 'Imp',           cat: 'enemy',  r: 20 },
-  3001: { name: 'Demon',         cat: 'enemy',  r: 30 },
-  85:   { name: 'Cyberdemon',    cat: 'enemy',  r: 40 },
+  3001: { name: 'Imp',           cat: 'enemy',  r: 20 },
+  3002: { name: 'Demon',         cat: 'enemy',  r: 30 },
+  3003: { name: 'Baron of Hell', cat: 'enemy',  r: 24 },
+  16:   { name: 'Cyberdemon',    cat: 'enemy',  r: 40 },
+  7:    { name: 'Spider Mastermind', cat: 'enemy', r: 128 },
   2001: { name: 'Shotgun',       cat: 'weapon', r: 10 },
   2002: { name: 'Chaingun',      cat: 'weapon', r: 10 },
   2006: { name: 'BFG 9000',      cat: 'weapon', r: 10 },
