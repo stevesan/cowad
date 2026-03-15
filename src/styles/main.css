@@ -1,0 +1,54 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #111; color: #ccc; font-family: monospace; font-size: 12px;
+       display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+
+/* ── Toolbar ── */
+#toolbar { display: flex; align-items: center; gap: 6px; background: #1a1a1a;
+           border-bottom: 1px solid #333; padding: 4px 8px; flex-shrink: 0; height: 36px; }
+#toolbar h1 { font-size: 13px; color: #c00; font-weight: bold; margin-right: 4px; letter-spacing: 1px; }
+.tool-btn { background: #2a2a2a; border: 1px solid #444; color: #999; padding: 3px 10px;
+            cursor: pointer; border-radius: 3px; font-size: 12px; font-family: monospace; }
+.tool-btn.active { background: #900; color: #fff; border-color: #c00; }
+.tool-btn:hover:not(.active) { background: #3a3a3a; color: #fff; }
+.sep { width: 1px; background: #333; height: 20px; margin: 0 2px; }
+#clear-btn { background: #2a1a1a; border: 1px solid #633; color: #f88; padding: 3px 10px;
+             cursor: pointer; border-radius: 3px; font-size: 12px; }
+#clear-btn:hover { background: #4a2a2a; }
+#thing-type-sel { background: #2a2a2a; border: 1px solid #444; color: #aaa;
+                  padding: 2px 4px; font-size: 11px; font-family: monospace; }
+#coords { color: #555; margin-left: auto; min-width: 80px; text-align: right; }
+#users  { color: #555; font-size: 11px; }
+#status { padding: 2px 8px; border-radius: 8px; font-size: 11px; background: #222; color: #666; }
+#status.connected    { background: #030; color: #0f0; }
+#status.disconnected { background: #300; color: #f66; }
+
+/* ── Main layout ── */
+#main { display: flex; flex: 1; overflow: hidden; }
+#canvas-wrap { flex: 1; position: relative; overflow: hidden; }
+canvas { display: block; width: 100%; height: 100%; }
+
+/* ── Properties panel ── */
+#panel { width: 260px; background: #141414; border-left: 1px solid #2a2a2a;
+         overflow-y: auto; flex-shrink: 0; padding: 8px; }
+.panel-title { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px;
+               margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #222; }
+.prop-row { display: flex; align-items: center; margin-bottom: 5px; gap: 6px; }
+.prop-row label { color: #666; font-size: 11px; width: 72px; flex-shrink: 0; }
+.prop-row input[type=number],
+.prop-row input[type=text],
+.prop-row select { flex: 1; background: #1e1e1e; border: 1px solid #333; color: #ccc;
+                   padding: 2px 5px; font-size: 11px; font-family: monospace; border-radius: 2px; }
+.prop-row input[type=checkbox] { accent-color: #c00; }
+.prop-section { border-top: 1px solid #222; padding-top: 6px; margin-top: 6px; }
+.prop-section .panel-title { color: #444; }
+#panel-empty { color: #333; font-size: 11px; text-align: center; padding: 24px 0; }
+.del-btn { width: 100%; background: #2a1414; border: 1px solid #633; color: #f66;
+           padding: 4px; cursor: pointer; font-size: 11px; margin-top: 8px; border-radius: 2px; }
+.del-btn:hover { background: #4a2020; }
+
+/* ── Toast ── */
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+         background: #2a1a1a; color: #f88; border: 1px solid #633; padding: 7px 16px;
+         border-radius: 4px; font-size: 12px; pointer-events: none; opacity: 0;
+         transition: opacity 0.2s; z-index: 100; }
+#toast.show { opacity: 1; }

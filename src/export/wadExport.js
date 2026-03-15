@@ -1,0 +1,277 @@
+import { maps } from '../state/appState.js';
+import { showToast } from '../ui/toast.js';
+
+export function exportWAD() {
+  function str8(s) {
+    const buf = new Uint8Array(8);
+    s = (s == null || s === '') ? '-' : String(s);
+    for (let i = 0; i < Math.min(s.length, 8); i++) buf[i] = s.charCodeAt(i);
+    return buf;
+  }
+
+  // ── Step 1: Index all vertices ──
+  const vertIdx = new Map();
+  let vi = 0; maps.vertices.forEach((_, id) => vertIdx.set(id, vi++));
+
+  // ── Step 2: Filter valid linedefs (both vertices exist, not degenerate) ──
+  // Also fix back-only linedefs inline (swap back→front, flip v1/v2)
+  const validLinedefs = [];
+  maps.linedefs.forEach((ld, lid) => {
+    let v1i = vertIdx.get(ld.v1), v2i = vertIdx.get(ld.v2);
+    if (v1i == null || v2i == null || v1i === v2i) return;
+    // Doom requires every linedef to have a front sidedef
+    if (!ld.frontSide && ld.backSide) {
+      ld = Object.assign({}, ld, {
+        frontSide: ld.backSide, backSide: null,
+        v1: ld.v2, v2: ld.v1,
+        flags: (ld.flags ?? 1) & ~4 | 1,
+      });
+      const tmp = v1i; v1i = v2i; v2i = tmp;
+    }
+    validLinedefs.push({ lid, ld, v1i, v2i });
+  });
+  const ldIdx = new Map();
+  validLinedefs.forEach(({ lid }, i) => ldIdx.set(lid, i));
+
+  // ── Step 3: Collect only sidedefs referenced by valid linedefs ──
+  const usedSdIds = new Set();
+  for (const { ld } of validLinedefs) {
+    if (ld.frontSide && maps.sidedefs.has(ld.frontSide)) usedSdIds.add(ld.frontSide);
+    if (ld.backSide  && maps.sidedefs.has(ld.backSide))  usedSdIds.add(ld.backSide);
+  }
+
+  // ── Step 4: Collect only sectors referenced by those sidedefs ──
+  const usedSecIds = new Set();
+  for (const sdId of usedSdIds) {
+    const sd = maps.sidedefs.get(sdId);
+    if (sd && sd.sector && maps.sectors.has(sd.sector)) usedSecIds.add(sd.sector);
+  }
+
+  // ── Step 5: Build contiguous indices for only referenced items ──
+  const sdIdx = new Map();
+  const exportSidedefs = [];
+  maps.sidedefs.forEach((sd, id) => {
+    if (!usedSdIds.has(id)) return;
+    sdIdx.set(id, exportSidedefs.length);
+    exportSidedefs.push(sd);
+  });
+
+  const secIdx = new Map();
+  const exportSectors = [];
+  maps.sectors.forEach((sec, id) => {
+    if (!usedSecIds.has(id)) return;
+    secIdx.set(id, exportSectors.length);
+    exportSectors.push(sec);
+  });
+
+  const nV = maps.vertices.size, nL = validLinedefs.length,
+        nD = exportSidedefs.length, nS = exportSectors.length, nT = maps.things.size;
+  const skippedLd  = maps.linedefs.size - nL;
+  const skippedSd  = maps.sidedefs.size - nD;
+  const skippedSec = maps.sectors.size  - nS;
+
+  // ── Pre-export validation ──
+  const issues = [];
+  if (!nT) issues.push('No things placed');
+  else if (![...maps.things.values()].some(t => t.type === 1))
+    issues.push('No Player 1 Start (thing type 1) — game will crash on load');
+  if (skippedLd)  issues.push(`${skippedLd} degenerate linedef(s) skipped`);
+  if (skippedSd)  issues.push(`${skippedSd} orphaned sidedef(s) skipped`);
+  if (skippedSec) issues.push(`${skippedSec} orphaned sector(s) skipped`);
+  const missingFront = validLinedefs.filter(({ ld }) =>
+    !ld.frontSide || !sdIdx.has(ld.frontSide)).length;
+  if (missingFront) issues.push(`${missingFront} linedef(s) have no valid front sidedef`);
+
+  console.group('[WAD Export]');
+  console.log(`Exporting: ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t`);
+  if (skippedLd || skippedSd || skippedSec)
+    console.log(`Skipped orphans: ${skippedLd}l ${skippedSd}sd ${skippedSec}s`);
+  if (issues.length) { console.warn('Issues:'); issues.forEach(s => console.warn('  •', s)); }
+  console.groupEnd();
+
+  if (issues.some(s => s.includes('Player 1 Start'))) showToast('Warning: no Player 1 Start');
+
+  // ── THINGS (10 bytes each) ──
+  const thingsBuf = new ArrayBuffer(nT * 10);
+  const thV = new DataView(thingsBuf); let to = 0;
+  maps.things.forEach(th => {
+    thV.setInt16(to, Math.round(th.x     ?? 0), true); to += 2;
+    thV.setInt16(to, Math.round(th.y     ?? 0), true); to += 2;
+    thV.setInt16(to, Math.round(th.angle ?? 0), true); to += 2;
+    thV.setInt16(to, th.type  ?? 1,             true); to += 2;
+    thV.setInt16(to, th.flags ?? 7,             true); to += 2;
+  });
+
+  // ── LINEDEFS (14 bytes each) ──
+  const linesBuf = new ArrayBuffer(nL * 14);
+  const lV = new DataView(linesBuf); let lo = 0;
+  for (const { ld, v1i, v2i } of validLinedefs) {
+    lV.setInt16(lo, v1i,            true); lo += 2;
+    lV.setInt16(lo, v2i,            true); lo += 2;
+    lV.setInt16(lo, ld.flags   ?? 1,true); lo += 2;
+    lV.setInt16(lo, ld.special ?? 0,true); lo += 2;
+    lV.setInt16(lo, ld.tag     ?? 0,true); lo += 2;
+    lV.setInt16(lo, ld.frontSide && sdIdx.has(ld.frontSide) ? sdIdx.get(ld.frontSide) : -1, true); lo += 2;
+    lV.setInt16(lo, ld.backSide  && sdIdx.has(ld.backSide)  ? sdIdx.get(ld.backSide)  : -1, true); lo += 2;
+  }
+
+  // ── SIDEDEFS (30 bytes each) — only referenced ones ──
+  const sidesBuf = new ArrayBuffer(nD * 30);
+  const sV = new DataView(sidesBuf), sU = new Uint8Array(sidesBuf); let so = 0;
+  for (const sd of exportSidedefs) {
+    sV.setInt16(so, sd.xoff ?? 0, true); so += 2;
+    sV.setInt16(so, sd.yoff ?? 0, true); so += 2;
+    sU.set(str8(sd.upper), so); so += 8;
+    sU.set(str8(sd.lower), so); so += 8;
+    sU.set(str8(sd.mid),   so); so += 8;
+    sV.setInt16(so, sd.sector != null ? (secIdx.get(sd.sector) ?? 0) : 0, true); so += 2;
+  }
+
+  // ── VERTEXES (4 bytes each) ──
+  const vertsBuf = new ArrayBuffer(nV * 4);
+  const vV = new DataView(vertsBuf); let vo = 0;
+  maps.vertices.forEach(v => {
+    vV.setInt16(vo, Math.round(v.x ?? 0), true); vo += 2;
+    vV.setInt16(vo, Math.round(v.y ?? 0), true); vo += 2;
+  });
+
+  // ── SEGS ──
+  const segList = [];
+  for (const { lid, ld, v1i, v2i } of validLinedefs) {
+    if (!ld.frontSide || !sdIdx.has(ld.frontSide)) continue;
+    const v1 = maps.vertices.get(ld.v1), v2 = maps.vertices.get(ld.v2);
+    const dx = v2.x - v1.x, dy = v2.y - v1.y;
+    const ang = Math.round(Math.atan2(dy, dx) / (2 * Math.PI) * 65536) & 0xFFFF;
+    segList.push({ v1: v1i, v2: v2i, angle: ang, linedef: ldIdx.get(lid), side: 0, offset: 0 });
+    if (ld.backSide && sdIdx.has(ld.backSide))
+      segList.push({ v1: v2i, v2: v1i, angle: (ang + 32768) & 0xFFFF, linedef: ldIdx.get(lid), side: 1, offset: 0 });
+  }
+  const segsBuf = new ArrayBuffer(segList.length * 12);
+  const sgV = new DataView(segsBuf); let sgo = 0;
+  for (const seg of segList) {
+    sgV.setInt16(sgo, seg.v1,       true); sgo += 2;
+    sgV.setInt16(sgo, seg.v2,       true); sgo += 2;
+    sgV.setUint16(sgo, seg.angle,   true); sgo += 2;
+    sgV.setInt16(sgo, seg.linedef,  true); sgo += 2;
+    sgV.setInt16(sgo, seg.side,     true); sgo += 2;
+    sgV.setInt16(sgo, seg.offset,   true); sgo += 2;
+  }
+
+  // ── SSECTORS ──
+  const ssectorsBuf = segList.length ? new ArrayBuffer(4) : new ArrayBuffer(0);
+  if (segList.length) {
+    const ssV = new DataView(ssectorsBuf);
+    ssV.setInt16(0, segList.length, true);
+    ssV.setInt16(2, 0,              true);
+  }
+
+  // ── SECTORS (only referenced ones) ──
+  const sectsBuf = new ArrayBuffer(nS * 26);
+  const seV = new DataView(sectsBuf), seU = new Uint8Array(sectsBuf); let seo = 0;
+  for (const sec of exportSectors) {
+    seV.setInt16(seo, sec.floor   ?? 0,   true); seo += 2;
+    seV.setInt16(seo, sec.ceiling ?? 128, true); seo += 2;
+    seU.set(str8(sec.floorTex || 'FLOOR4_8'), seo); seo += 8;
+    seU.set(str8(sec.ceilTex  || 'CEIL3_5'),  seo); seo += 8;
+    seV.setInt16(seo, sec.light   ?? 160, true); seo += 2;
+    seV.setInt16(seo, sec.special ?? 0,   true); seo += 2;
+    seV.setInt16(seo, sec.tag     ?? 0,   true); seo += 2;
+  }
+
+  // ── REJECT ──
+  const rejectBuf = new ArrayBuffer(nS > 0 ? Math.ceil((nS * nS) / 8) : 0);
+
+  // ── BLOCKMAP ──
+  function buildBlockmap() {
+    if (!nV || !nL) return new ArrayBuffer(0);
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    maps.vertices.forEach(v => {
+      minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
+      minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
+    });
+    const ox = Math.floor(minX) - 8, oy = Math.floor(minY) - 8;
+    const cols = Math.max(1, Math.ceil((maxX - ox) / 128) + 1);
+    const rows = Math.max(1, Math.ceil((maxY - oy) / 128) + 1);
+    const lineArr = validLinedefs.map(({ ld }, i) => {
+      const v1 = maps.vertices.get(ld.v1), v2 = maps.vertices.get(ld.v2);
+      return { i, x0: Math.min(v1.x,v2.x), x1: Math.max(v1.x,v2.x),
+                  y0: Math.min(v1.y,v2.y), y1: Math.max(v1.y,v2.y) };
+    });
+    const blockLists = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const bx0 = ox + c*128, bx1 = bx0 + 128;
+        const by0 = oy + r*128, by1 = by0 + 128;
+        const list = [0];
+        for (const l of lineArr)
+          if (l.x1 >= bx0 && l.x0 <= bx1 && l.y1 >= by0 && l.y0 <= by1) list.push(l.i);
+        list.push(0xFFFF);
+        blockLists.push(list);
+      }
+    }
+    const headerWords = 4 + cols * rows;
+    const offsets = []; let curOff = headerWords;
+    for (const bl of blockLists) { offsets.push(curOff); curOff += bl.length; }
+    const buf = new ArrayBuffer(curOff * 2);
+    const dv = new DataView(buf); let p = 0;
+    dv.setInt16(p, ox,   true); p += 2;
+    dv.setInt16(p, oy,   true); p += 2;
+    dv.setInt16(p, cols, true); p += 2;
+    dv.setInt16(p, rows, true); p += 2;
+    for (const off of offsets)           { dv.setUint16(p, off, true); p += 2; }
+    for (const bl of blockLists) for (const v of bl) { dv.setUint16(p, v, true); p += 2; }
+    return buf;
+  }
+
+  // ── Assemble PWAD ──
+  const lumps = [
+    { name: 'MAP01',    buf: new ArrayBuffer(0) },
+    { name: 'THINGS',   buf: thingsBuf  },
+    { name: 'LINEDEFS', buf: linesBuf   },
+    { name: 'SIDEDEFS', buf: sidesBuf   },
+    { name: 'VERTEXES', buf: vertsBuf   },
+    { name: 'SEGS',     buf: segsBuf    },
+    { name: 'SSECTORS', buf: ssectorsBuf},
+    { name: 'NODES',    buf: new ArrayBuffer(0) },
+    { name: 'SECTORS',  buf: sectsBuf   },
+    { name: 'REJECT',   buf: rejectBuf  },
+    { name: 'BLOCKMAP', buf: buildBlockmap() },
+  ];
+
+  const dataSize  = lumps.reduce((a, l) => a + l.buf.byteLength, 0);
+  const dirOffset = 12 + dataSize;
+  const wad = new ArrayBuffer(dirOffset + lumps.length * 16);
+  const wdv = new DataView(wad), wu8 = new Uint8Array(wad);
+
+  wu8.set([80,87,65,68], 0);
+  wdv.setInt32(4, lumps.length, true);
+  wdv.setInt32(8, dirOffset,    true);
+
+  let off = 12;
+  const entries = [];
+  for (const l of lumps) {
+    entries.push({ off, size: l.buf.byteLength, name: l.name });
+    if (l.buf.byteLength > 0) { wu8.set(new Uint8Array(l.buf), off); off += l.buf.byteLength; }
+  }
+
+  let dp = dirOffset;
+  for (const e of entries) {
+    wdv.setInt32(dp, e.off,  true); dp += 4;
+    wdv.setInt32(dp, e.size, true); dp += 4;
+    wu8.set(str8(e.name), dp); dp += 8;
+  }
+
+  console.table(entries.map(e => ({ lump: e.name, offset: e.off, size: e.size })));
+
+  const blob = new Blob([wad], { type: 'application/octet-stream' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'map.wad';
+  a.click();
+  URL.revokeObjectURL(a.href);
+
+  let msg = `MAP01: ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t`;
+  const skipped = skippedLd + skippedSd + skippedSec;
+  if (skipped) msg += ` (${skipped} orphans skipped)`;
+  showToast(msg);
+}

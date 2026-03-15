@@ -1,0 +1,148 @@
+import {
+  maps, tool, selected, lineStart, pan, zoom, isPanning, panStart,
+  spaceDown, dragState, mouseWorld,
+  setSelected, setLineStart, setZoom, setIsPanning, setPanStart,
+  setSpaceDown, setDragState, setMouseWorld, setTool,
+  triggerDraw, triggerRenderPanel,
+} from '../state/appState.js';
+import { mapRef } from '../config/firebase.js';
+import { w2s, s2w, snap } from '../canvas/transforms.js';
+import { nearestVertex, nearestLinedef, nearestThing, pointInPoly } from '../geometry/hitTest.js';
+import { buildSectorPoly } from '../geometry/cycleFinder.js';
+import { placeVertex, placeLine, placeThing, applySectorTool, deleteSelected } from '../map/mapActions.js';
+import { draw } from '../canvas/renderer.js';
+import { renderPanel } from './propertiesPanel.js';
+
+function select(type, id) { setSelected({ type, id }); renderPanel(); }
+
+export function initCanvasInput(canvas) {
+  function getCanvasXY(e) {
+    const r = canvas.getBoundingClientRect();
+    return { sx: e.clientX - r.left, sy: e.clientY - r.top };
+  }
+
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  canvas.addEventListener('mousemove', e => {
+    const { sx, sy } = getCanvasXY(e);
+    setMouseWorld(s2w(sx, sy));
+    document.getElementById('coords').textContent =
+      `${Math.round(mouseWorld.x)}, ${Math.round(mouseWorld.y)}`;
+
+    if (isPanning) {
+      pan.x = panStart.px + (e.clientX - panStart.mx);
+      pan.y = panStart.py + (e.clientY - panStart.my);
+      draw(); return;
+    }
+
+    if (dragState) {
+      const wx = snap(mouseWorld.x), wy = snap(mouseWorld.y);
+      if (dragState.type === 'vertex') mapRef('vertices').child(dragState.id).update({ x: wx, y: wy });
+      else if (dragState.type === 'thing') mapRef('things').child(dragState.id).update({ x: wx, y: wy });
+      return;
+    }
+
+    if (tool === 'line') draw();
+  });
+
+  canvas.addEventListener('mousedown', e => {
+    if (e.button === 1 || (e.button === 0 && spaceDown)) {
+      setIsPanning(true);
+      setPanStart({ mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y });
+      e.preventDefault(); return;
+    }
+    if (e.button !== 0) return;
+
+    const { sx, sy } = getCanvasXY(e);
+    const { x: wx, y: wy } = s2w(sx, sy);
+
+    if (tool === 'select') {
+      const vid = nearestVertex(wx, wy);
+      const tid = nearestThing(wx, wy);
+      const lid = nearestLinedef(wx, wy);
+
+      if (vid !== null) {
+        select('vertex', vid);
+        setDragState({ type: 'vertex', id: vid });
+      } else if (tid !== null) {
+        select('thing', tid);
+        setDragState({ type: 'thing', id: tid });
+      } else if (lid !== null) {
+        select('linedef', lid);
+      } else {
+        let found = null;
+        maps.sectors.forEach((_, sid) => {
+          const poly = buildSectorPoly(sid);
+          if (poly && pointInPoly(wx, wy, poly)) found = sid;
+        });
+        if (found) select('sector', found);
+        else { setSelected(null); renderPanel(); }
+      }
+      draw();
+
+    } else if (tool === 'vertex') {
+      placeVertex(wx, wy);
+
+    } else if (tool === 'line') {
+      const vid = nearestVertex(wx, wy);
+      if (vid !== null) {
+        if (lineStart === null) {
+          setLineStart(vid);
+        } else {
+          if (vid !== lineStart) placeLine(lineStart, vid);
+          setLineStart(vid);
+        }
+        draw();
+      } else {
+        placeVertex(wx, wy).then(newId => {
+          if (lineStart !== null) placeLine(lineStart, newId);
+          setLineStart(newId);
+          draw();
+        });
+      }
+
+    } else if (tool === 'sector') {
+      applySectorTool(wx, wy);
+
+    } else if (tool === 'thing') {
+      placeThing(wx, wy);
+    }
+  });
+
+  canvas.addEventListener('mouseup', () => { setIsPanning(false); setDragState(null); });
+
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const { sx, sy } = getCanvasXY(e);
+    const before = s2w(sx, sy);
+    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+    setZoom(Math.max(0.05, Math.min(32, zoom * factor)));
+    const after = s2w(sx, sy);
+    pan.x += (after.x - before.x) * zoom;
+    pan.y -= (after.y - before.y) * zoom;
+    draw();
+  }, { passive: false });
+}
+
+export function initKeyboard(canvas) {
+  function doSetTool(t) {
+    setTool(t);
+    setLineStart(null);
+    document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+    canvas.style.cursor = (t === 'select') ? 'default' : 'crosshair';
+    draw();
+  }
+
+  window.addEventListener('keydown', e => {
+    if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+    if (e.key === ' ')      { setSpaceDown(true); e.preventDefault(); return; }
+    if (e.key === 'Escape') { setLineStart(null); draw(); return; }
+    if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
+    const map = { s: 'select', v: 'vertex', l: 'line', e: 'sector', t: 'thing' };
+    if (map[e.key.toLowerCase()]) doSetTool(map[e.key.toLowerCase()]);
+  });
+  window.addEventListener('keyup', e => { if (e.key === ' ') setSpaceDown(false); });
+
+  // Expose for toolbar buttons
+  return doSetTool;
+}
