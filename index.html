@@ -680,21 +680,21 @@ async function applySectorTool(wx, wy) {
     const sdRef = await mapRef('sidedefs').push({
       sector: sid, xoff: 0, yoff: 0,
       upper: 'STARTAN2',
-      mid:   becomingTwoSided ? '-' : 'STARTAN2',
+      mid:   'STARTAN2',
       lower: 'STARTAN2',
     });
 
     const updates = useFront ? { frontSide: sdRef.key } : { backSide: sdRef.key };
     if (becomingTwoSided) {
-      updates.flags = (matchLd.flags | 4) & ~1; // set two-sided, clear impassable
-      // Fix the existing sidedef for two-sided: clear mid, ensure upper/lower have textures
+      updates.flags = (matchLd.flags ?? 1) | 4 | 1; // set two-sided + keep impassable (wall by default)
+      // Ensure existing sidedef has upper/lower textures for height differences
       const existingSdId = useFront ? matchLd.backSide : matchLd.frontSide;
       const existingSd = existingSdId && maps.sidedefs.get(existingSdId);
       if (existingSd) {
         const sdFix = {};
-        if (existingSd.mid && existingSd.mid !== '-') sdFix.mid = '-';
         if (!existingSd.upper || existingSd.upper === '-') sdFix.upper = 'STARTAN2';
         if (!existingSd.lower || existingSd.lower === '-') sdFix.lower = 'STARTAN2';
+        if (!existingSd.mid   || existingSd.mid   === '-') sdFix.mid   = 'STARTAN2';
         if (Object.keys(sdFix).length)
           await mapRef('sidedefs').child(existingSdId).update(sdFix);
       }
@@ -1011,7 +1011,7 @@ function cleanupMap() {
     }
   });
 
-  // 3. Fix textures on two-sided linedefs (upper/lower must not be '-')
+  // 3. Fix textures on two-sided linedefs (upper/lower/mid must not be '-')
   maps.linedefs.forEach((ld, lid) => {
     if (!(ld.flags & 4)) return; // not two-sided
     [ld.frontSide, ld.backSide].forEach(sdId => {
@@ -1019,9 +1019,9 @@ function cleanupMap() {
       const sd = maps.sidedefs.get(sdId);
       if (!sd) return;
       const upd = {};
-      if (sd.mid && sd.mid !== '-') upd.mid = '-';
       if (!sd.upper || sd.upper === '-') upd.upper = 'STARTAN2';
       if (!sd.lower || sd.lower === '-') upd.lower = 'STARTAN2';
+      if (!sd.mid   || sd.mid   === '-') upd.mid   = 'STARTAN2';
       if (Object.keys(upd).length) { mapRef('sidedefs').child(sdId).update(upd); fixed.tex++; }
     });
   });
