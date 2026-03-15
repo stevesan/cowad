@@ -149,6 +149,7 @@
     </optgroup>
   </select>
   <div class="sep"></div>
+  <button id="clean-btn" style="background:#1a2a1a;border:1px solid #464;color:#8f8;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Clean</button>
   <button id="wad-btn" style="background:#1a1a2e;border:1px solid #446;color:#88f;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Export WAD</button>
   <button id="clear-btn">Clear</button>
   <span id="coords">0, 0</span>
@@ -667,13 +668,38 @@ async function applySectorTool(wx, wy) {
     });
     if (!matchId || !matchLd) continue;
 
-    const sdRef = await mapRef('sidedefs').push({ sector: sid, xoff: 0, yoff: 0, upper: '-', mid: 'STARTAN2', lower: '-' });
-    if (!reversed) {
-      await mapRef('linedefs').child(matchId).update({ frontSide: sdRef.key });
-    } else {
-      const newFlags = (matchLd.flags | 4) & ~1; // two-sided, not impassable
-      await mapRef('linedefs').child(matchId).update({ backSide: sdRef.key, flags: newFlags });
+    // Doom REQUIRES every linedef to have a front sidedef.
+    // Always fill front first, then back.
+    let useFront;
+    if (!matchLd.frontSide) useFront = true;       // front empty → use it
+    else if (!matchLd.backSide) useFront = false;   // front taken → use back
+    else continue;                                   // both taken → skip
+
+    const becomingTwoSided = useFront ? !!matchLd.backSide : !!matchLd.frontSide;
+
+    const sdRef = await mapRef('sidedefs').push({
+      sector: sid, xoff: 0, yoff: 0,
+      upper: 'STARTAN2',
+      mid:   becomingTwoSided ? '-' : 'STARTAN2',
+      lower: 'STARTAN2',
+    });
+
+    const updates = useFront ? { frontSide: sdRef.key } : { backSide: sdRef.key };
+    if (becomingTwoSided) {
+      updates.flags = (matchLd.flags | 4) & ~1; // set two-sided, clear impassable
+      // Fix the existing sidedef for two-sided: clear mid, ensure upper/lower have textures
+      const existingSdId = useFront ? matchLd.backSide : matchLd.frontSide;
+      const existingSd = existingSdId && maps.sidedefs.get(existingSdId);
+      if (existingSd) {
+        const sdFix = {};
+        if (existingSd.mid && existingSd.mid !== '-') sdFix.mid = '-';
+        if (!existingSd.upper || existingSd.upper === '-') sdFix.upper = 'STARTAN2';
+        if (!existingSd.lower || existingSd.lower === '-') sdFix.lower = 'STARTAN2';
+        if (Object.keys(sdFix).length)
+          await mapRef('sidedefs').child(existingSdId).update(sdFix);
+      }
     }
+    await mapRef('linedefs').child(matchId).update(updates);
   }
 
   selected = { type: 'sector', id: sid };
@@ -958,6 +984,88 @@ db.ref('.info/connected').on('value', snap => {
   el.className   = snap.val() ? 'connected'  : 'disconnected';
 });
 
+// ── Map cleanup ───────────────────────────────────────────────────────────────
+function cleanupMap() {
+  let removed = { ld: 0, sd: 0, sec: 0, vt: 0 }, fixed = { swap: 0, tex: 0 };
+
+  // 1. Remove linedefs whose vertices no longer exist
+  maps.linedefs.forEach((ld, lid) => {
+    if (!maps.vertices.has(ld.v1) || !maps.vertices.has(ld.v2)) {
+      if (ld.frontSide) mapRef('sidedefs').child(ld.frontSide).remove();
+      if (ld.backSide)  mapRef('sidedefs').child(ld.backSide).remove();
+      mapRef('linedefs').child(lid).remove();
+      removed.ld++;
+    }
+  });
+
+  // 2. Fix linedefs that have backSide but no frontSide (Doom requires front)
+  maps.linedefs.forEach((ld, lid) => {
+    if (!ld.frontSide && ld.backSide) {
+      // Swap back→front and flip the line direction so front-normal stays consistent
+      mapRef('linedefs').child(lid).update({
+        frontSide: ld.backSide, backSide: null,
+        v1: ld.v2, v2: ld.v1,
+        flags: (ld.flags ?? 1) & ~4 | 1,   // clear two-sided, set impassable (now single-sided)
+      });
+      fixed.swap++;
+    }
+  });
+
+  // 3. Fix textures on two-sided linedefs (upper/lower must not be '-')
+  maps.linedefs.forEach((ld, lid) => {
+    if (!(ld.flags & 4)) return; // not two-sided
+    [ld.frontSide, ld.backSide].forEach(sdId => {
+      if (!sdId) return;
+      const sd = maps.sidedefs.get(sdId);
+      if (!sd) return;
+      const upd = {};
+      if (sd.mid && sd.mid !== '-') upd.mid = '-';
+      if (!sd.upper || sd.upper === '-') upd.upper = 'STARTAN2';
+      if (!sd.lower || sd.lower === '-') upd.lower = 'STARTAN2';
+      if (Object.keys(upd).length) { mapRef('sidedefs').child(sdId).update(upd); fixed.tex++; }
+    });
+  });
+
+  // 4. Collect sidedefs actually referenced by surviving linedefs
+  const usedSdIds = new Set();
+  maps.linedefs.forEach(ld => {
+    if (ld.frontSide) usedSdIds.add(ld.frontSide);
+    if (ld.backSide)  usedSdIds.add(ld.backSide);
+  });
+
+  // 5. Remove orphaned sidedefs
+  maps.sidedefs.forEach((sd, id) => {
+    if (!usedSdIds.has(id)) { mapRef('sidedefs').child(id).remove(); removed.sd++; }
+  });
+
+  // 6. Collect sectors actually referenced by surviving sidedefs
+  const usedSecIds = new Set();
+  maps.sidedefs.forEach((sd, id) => {
+    if (usedSdIds.has(id) && sd.sector && maps.sectors.has(sd.sector))
+      usedSecIds.add(sd.sector);
+  });
+
+  // 7. Remove orphaned sectors
+  maps.sectors.forEach((sec, id) => {
+    if (!usedSecIds.has(id)) { mapRef('sectors').child(id).remove(); removed.sec++; }
+  });
+
+  // 8. Remove orphan vertices
+  const usedVerts = new Set();
+  maps.linedefs.forEach(ld => { usedVerts.add(ld.v1); usedVerts.add(ld.v2); });
+  maps.vertices.forEach((v, id) => {
+    if (!usedVerts.has(id)) { mapRef('vertices').child(id).remove(); removed.vt++; }
+  });
+
+  const totalRm = removed.ld + removed.sd + removed.sec + removed.vt;
+  const totalFx = fixed.swap + fixed.tex;
+  const parts = [];
+  if (totalRm) parts.push(`removed ${removed.sec}s ${removed.sd}sd ${removed.ld}l ${removed.vt}v`);
+  if (fixed.swap) parts.push(`${fixed.swap} back→front swaps`);
+  if (fixed.tex)  parts.push(`${fixed.tex} texture fixes`);
+  showToast(parts.length ? 'Cleaned: ' + parts.join(', ') : 'Map is clean');
+}
+
 // ── WAD Export ────────────────────────────────────────────────────────────────
 function exportWAD() {
   function str8(s) {
@@ -967,45 +1075,87 @@ function exportWAD() {
     return buf;
   }
 
-  // ── Index maps: Firebase push-ID → sequential integer ──
-  const vertIdx = new Map(), secIdx = new Map(), sdIdx = new Map();
+  // ── Step 1: Index all vertices ──
+  const vertIdx = new Map();
   let vi = 0; maps.vertices.forEach((_, id) => vertIdx.set(id, vi++));
-  let si = 0; maps.sectors.forEach((_, id) => secIdx.set(id, si++));
-  let di = 0; maps.sidedefs.forEach((_, id) => sdIdx.set(id, di++));
 
-  // ── Filter linedefs: skip any where vertices are missing OR the same ──
-  // (zero-length / dangling linedefs crash BSP builders)
-  const validLinedefs = []; // [{ lid, ld, v1i, v2i }]
+  // ── Step 2: Filter valid linedefs (both vertices exist, not degenerate) ──
+  // Also fix back-only linedefs inline (swap back→front, flip v1/v2)
+  const validLinedefs = [];
   maps.linedefs.forEach((ld, lid) => {
-    const v1i = vertIdx.get(ld.v1), v2i = vertIdx.get(ld.v2);
+    let v1i = vertIdx.get(ld.v1), v2i = vertIdx.get(ld.v2);
     if (v1i == null || v2i == null || v1i === v2i) return;
+    // Doom requires every linedef to have a front sidedef
+    if (!ld.frontSide && ld.backSide) {
+      ld = Object.assign({}, ld, {
+        frontSide: ld.backSide, backSide: null,
+        v1: ld.v2, v2: ld.v1,
+        flags: (ld.flags ?? 1) & ~4 | 1,
+      });
+      const tmp = v1i; v1i = v2i; v2i = tmp;
+    }
     validLinedefs.push({ lid, ld, v1i, v2i });
   });
-
-  // Rebuild linedef index from only the valid ones
   const ldIdx = new Map();
   validLinedefs.forEach(({ lid }, i) => ldIdx.set(lid, i));
 
-  const nV = maps.vertices.size, nS = maps.sectors.size, nD = maps.sidedefs.size,
-        nL = validLinedefs.length, nT = maps.things.size;
-  const skipped = maps.linedefs.size - nL;
+  // ── Step 3: Collect only sidedefs referenced by valid linedefs ──
+  const usedSdIds = new Set();
+  for (const { ld } of validLinedefs) {
+    if (ld.frontSide && maps.sidedefs.has(ld.frontSide)) usedSdIds.add(ld.frontSide);
+    if (ld.backSide  && maps.sidedefs.has(ld.backSide))  usedSdIds.add(ld.backSide);
+  }
 
-  // ── Pre-export validation (logged to console for debugging) ──
+  // ── Step 4: Collect only sectors referenced by those sidedefs ──
+  const usedSecIds = new Set();
+  for (const sdId of usedSdIds) {
+    const sd = maps.sidedefs.get(sdId);
+    if (sd && sd.sector && maps.sectors.has(sd.sector)) usedSecIds.add(sd.sector);
+  }
+
+  // ── Step 5: Build contiguous indices for only referenced items ──
+  const sdIdx = new Map();
+  const exportSidedefs = [];
+  maps.sidedefs.forEach((sd, id) => {
+    if (!usedSdIds.has(id)) return;
+    sdIdx.set(id, exportSidedefs.length);
+    exportSidedefs.push(sd);
+  });
+
+  const secIdx = new Map();
+  const exportSectors = [];
+  maps.sectors.forEach((sec, id) => {
+    if (!usedSecIds.has(id)) return;
+    secIdx.set(id, exportSectors.length);
+    exportSectors.push(sec);
+  });
+
+  const nV = maps.vertices.size, nL = validLinedefs.length,
+        nD = exportSidedefs.length, nS = exportSectors.length, nT = maps.things.size;
+  const skippedLd  = maps.linedefs.size - nL;
+  const skippedSd  = maps.sidedefs.size - nD;
+  const skippedSec = maps.sectors.size  - nS;
+
+  // ── Pre-export validation ──
   const issues = [];
-  if (!maps.things.size) issues.push('No things placed');
+  if (!nT) issues.push('No things placed');
   else if (![...maps.things.values()].some(t => t.type === 1))
     issues.push('No Player 1 Start (thing type 1) — game will crash on load');
-  if (skipped) issues.push(`${skipped} degenerate linedef(s) skipped (missing/identical vertices)`);
-  const missingFront = validLinedefs.filter(({ ld }) => !ld.frontSide).length;
-  if (missingFront) issues.push(`${missingFront} linedef(s) have no front sidedef`);
-  if (!nS && nD) issues.push('Sidedefs exist but no sectors — sidedef sector refs will be invalid');
+  if (skippedLd)  issues.push(`${skippedLd} degenerate linedef(s) skipped`);
+  if (skippedSd)  issues.push(`${skippedSd} orphaned sidedef(s) skipped`);
+  if (skippedSec) issues.push(`${skippedSec} orphaned sector(s) skipped`);
+  const missingFront = validLinedefs.filter(({ ld }) =>
+    !ld.frontSide || !sdIdx.has(ld.frontSide)).length;
+  if (missingFront) issues.push(`${missingFront} linedef(s) have no valid front sidedef`);
 
   console.group('[WAD Export]');
-  console.log(`Vertices:${nV}  Linedefs:${nL}  Sidedefs:${nD}  Sectors:${nS}  Things:${nT}`);
-  if (issues.length) { console.warn('Issues found:'); issues.forEach(s => console.warn(' •', s)); }
+  console.log(`Exporting: ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t`);
+  if (skippedLd || skippedSd || skippedSec)
+    console.log(`Skipped orphans: ${skippedLd}l ${skippedSd}sd ${skippedSec}s`);
+  if (issues.length) { console.warn('Issues:'); issues.forEach(s => console.warn('  •', s)); }
   console.groupEnd();
 
-  if (issues.some(s => s.includes('No Player 1 Start'))) showToast('⚠ No Player 1 Start — add thing type 1');
+  if (issues.some(s => s.includes('Player 1 Start'))) showToast('Warning: no Player 1 Start');
 
   // ── THINGS (10 bytes each) ──
   const thingsBuf = new ArrayBuffer(nT * 10);
@@ -1018,31 +1168,30 @@ function exportWAD() {
     thV.setInt16(to, th.flags ?? 7,             true); to += 2;
   });
 
-  // ── LINEDEFS (14 bytes each, valid only) ──
+  // ── LINEDEFS (14 bytes each) ──
   const linesBuf = new ArrayBuffer(nL * 14);
   const lV = new DataView(linesBuf); let lo = 0;
   for (const { ld, v1i, v2i } of validLinedefs) {
-    lV.setInt16(lo, v1i,                                                        true); lo += 2;
-    lV.setInt16(lo, v2i,                                                        true); lo += 2;
-    lV.setInt16(lo, ld.flags   ?? 1,                                            true); lo += 2;
-    lV.setInt16(lo, ld.special ?? 0,                                            true); lo += 2;
-    lV.setInt16(lo, ld.tag     ?? 0,                                            true); lo += 2;
-    lV.setInt16(lo, ld.frontSide ? (sdIdx.get(ld.frontSide) ?? -1) : -1,       true); lo += 2;
-    lV.setInt16(lo, ld.backSide  ? (sdIdx.get(ld.backSide)  ?? -1) : -1,       true); lo += 2;
+    lV.setInt16(lo, v1i,            true); lo += 2;
+    lV.setInt16(lo, v2i,            true); lo += 2;
+    lV.setInt16(lo, ld.flags   ?? 1,true); lo += 2;
+    lV.setInt16(lo, ld.special ?? 0,true); lo += 2;
+    lV.setInt16(lo, ld.tag     ?? 0,true); lo += 2;
+    lV.setInt16(lo, ld.frontSide && sdIdx.has(ld.frontSide) ? sdIdx.get(ld.frontSide) : -1, true); lo += 2;
+    lV.setInt16(lo, ld.backSide  && sdIdx.has(ld.backSide)  ? sdIdx.get(ld.backSide)  : -1, true); lo += 2;
   }
 
-  // ── SIDEDEFS (30 bytes each) ──
+  // ── SIDEDEFS (30 bytes each) — only referenced ones ──
   const sidesBuf = new ArrayBuffer(nD * 30);
   const sV = new DataView(sidesBuf), sU = new Uint8Array(sidesBuf); let so = 0;
-  maps.sidedefs.forEach(sd => {
+  for (const sd of exportSidedefs) {
     sV.setInt16(so, sd.xoff ?? 0, true); so += 2;
     sV.setInt16(so, sd.yoff ?? 0, true); so += 2;
     sU.set(str8(sd.upper), so); so += 8;
     sU.set(str8(sd.lower), so); so += 8;
     sU.set(str8(sd.mid),   so); so += 8;
-    // Use 0 if sector missing; invalid but non-crashing for a valid sector count
-    sV.setInt16(so, secIdx.get(sd.sector) ?? 0, true); so += 2;
-  });
+    sV.setInt16(so, sd.sector != null ? (secIdx.get(sd.sector) ?? 0) : 0, true); so += 2;
+  }
 
   // ── VERTEXES (4 bytes each) ──
   const vertsBuf = new ArrayBuffer(nV * 4);
@@ -1052,17 +1201,15 @@ function exportWAD() {
     vV.setInt16(vo, Math.round(v.y ?? 0), true); vo += 2;
   });
 
-  // ── SEGS (12 bytes each) — one per valid linedef front (+ back if two-sided) ──
-  // GZDoom rebuilds BSP from scratch when NODES is empty, but older ports need
-  // at least a non-empty SSECTORS lump to avoid BSP traversal crash.
+  // ── SEGS ──
   const segList = [];
   for (const { lid, ld, v1i, v2i } of validLinedefs) {
-    if (!ld.frontSide) continue;
+    if (!ld.frontSide || !sdIdx.has(ld.frontSide)) continue;
     const v1 = maps.vertices.get(ld.v1), v2 = maps.vertices.get(ld.v2);
     const dx = v2.x - v1.x, dy = v2.y - v1.y;
     const ang = Math.round(Math.atan2(dy, dx) / (2 * Math.PI) * 65536) & 0xFFFF;
-    segList.push({ v1: v1i, v2: v2i, angle: ang,                 linedef: ldIdx.get(lid), side: 0, offset: 0 });
-    if (ld.backSide)
+    segList.push({ v1: v1i, v2: v2i, angle: ang, linedef: ldIdx.get(lid), side: 0, offset: 0 });
+    if (ld.backSide && sdIdx.has(ld.backSide))
       segList.push({ v1: v2i, v2: v1i, angle: (ang + 32768) & 0xFFFF, linedef: ldIdx.get(lid), side: 1, offset: 0 });
   }
   const segsBuf = new ArrayBuffer(segList.length * 12);
@@ -1076,20 +1223,18 @@ function exportWAD() {
     sgV.setInt16(sgo, seg.offset,   true); sgo += 2;
   }
 
-  // ── SSECTORS (4 bytes each) — one subsector containing all segs ──
-  // With NODES empty, Doom ports use subsector 0 as the root, so this is valid.
-  // GZDoom ignores these entirely and rebuilds from linedefs.
+  // ── SSECTORS ──
   const ssectorsBuf = segList.length ? new ArrayBuffer(4) : new ArrayBuffer(0);
   if (segList.length) {
     const ssV = new DataView(ssectorsBuf);
-    ssV.setInt16(0, segList.length, true); // numSegs
-    ssV.setInt16(2, 0,              true); // firstSeg
+    ssV.setInt16(0, segList.length, true);
+    ssV.setInt16(2, 0,              true);
   }
 
-  // ── SECTORS (26 bytes each) ──
+  // ── SECTORS (only referenced ones) ──
   const sectsBuf = new ArrayBuffer(nS * 26);
   const seV = new DataView(sectsBuf), seU = new Uint8Array(sectsBuf); let seo = 0;
-  maps.sectors.forEach(sec => {
+  for (const sec of exportSectors) {
     seV.setInt16(seo, sec.floor   ?? 0,   true); seo += 2;
     seV.setInt16(seo, sec.ceiling ?? 128, true); seo += 2;
     seU.set(str8(sec.floorTex || 'FLOOR4_8'), seo); seo += 8;
@@ -1097,14 +1242,14 @@ function exportWAD() {
     seV.setInt16(seo, sec.light   ?? 160, true); seo += 2;
     seV.setInt16(seo, sec.special ?? 0,   true); seo += 2;
     seV.setInt16(seo, sec.tag     ?? 0,   true); seo += 2;
-  });
+  }
 
-  // ── REJECT (all zeros) ──
+  // ── REJECT ──
   const rejectBuf = new ArrayBuffer(nS > 0 ? Math.ceil((nS * nS) / 8) : 0);
 
   // ── BLOCKMAP ──
   function buildBlockmap() {
-    if (!nV || !nL) return new ArrayBuffer(0); // let port build it
+    if (!nV || !nL) return new ArrayBuffer(0);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     maps.vertices.forEach(v => {
       minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
@@ -1113,20 +1258,17 @@ function exportWAD() {
     const ox = Math.floor(minX) - 8, oy = Math.floor(minY) - 8;
     const cols = Math.max(1, Math.ceil((maxX - ox) / 128) + 1);
     const rows = Math.max(1, Math.ceil((maxY - oy) / 128) + 1);
-
-    // Linedef AABBs (using only valid linedefs, with their new sequential indices)
     const lineArr = validLinedefs.map(({ ld }, i) => {
       const v1 = maps.vertices.get(ld.v1), v2 = maps.vertices.get(ld.v2);
       return { i, x0: Math.min(v1.x,v2.x), x1: Math.max(v1.x,v2.x),
                   y0: Math.min(v1.y,v2.y), y1: Math.max(v1.y,v2.y) };
     });
-
     const blockLists = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const bx0 = ox + c*128, bx1 = bx0 + 128;
         const by0 = oy + r*128, by1 = by0 + 128;
-        const list = [0]; // start marker
+        const list = [0];
         for (const l of lineArr)
           if (l.x1 >= bx0 && l.x0 <= bx1 && l.y1 >= by0 && l.y0 <= by1) list.push(l.i);
         list.push(0xFFFF);
@@ -1136,7 +1278,6 @@ function exportWAD() {
     const headerWords = 4 + cols * rows;
     const offsets = []; let curOff = headerWords;
     for (const bl of blockLists) { offsets.push(curOff); curOff += bl.length; }
-
     const buf = new ArrayBuffer(curOff * 2);
     const dv = new DataView(buf); let p = 0;
     dv.setInt16(p, ox,   true); p += 2;
@@ -1144,7 +1285,7 @@ function exportWAD() {
     dv.setInt16(p, cols, true); p += 2;
     dv.setInt16(p, rows, true); p += 2;
     for (const off of offsets)           { dv.setUint16(p, off, true); p += 2; }
-    for (const bl of blockLists) for (const v of bl) { dv.setUint16(p, v,   true); p += 2; }
+    for (const bl of blockLists) for (const v of bl) { dv.setUint16(p, v, true); p += 2; }
     return buf;
   }
 
@@ -1157,7 +1298,7 @@ function exportWAD() {
     { name: 'VERTEXES', buf: vertsBuf   },
     { name: 'SEGS',     buf: segsBuf    },
     { name: 'SSECTORS', buf: ssectorsBuf},
-    { name: 'NODES',    buf: new ArrayBuffer(0) }, // empty → port rebuilds BSP
+    { name: 'NODES',    buf: new ArrayBuffer(0) },
     { name: 'SECTORS',  buf: sectsBuf   },
     { name: 'REJECT',   buf: rejectBuf  },
     { name: 'BLOCKMAP', buf: buildBlockmap() },
@@ -1168,7 +1309,7 @@ function exportWAD() {
   const wad = new ArrayBuffer(dirOffset + lumps.length * 16);
   const wdv = new DataView(wad), wu8 = new Uint8Array(wad);
 
-  wu8.set([80,87,65,68], 0); // "PWAD"
+  wu8.set([80,87,65,68], 0);
   wdv.setInt32(4, lumps.length, true);
   wdv.setInt32(8, dirOffset,    true);
 
@@ -1186,7 +1327,6 @@ function exportWAD() {
     wu8.set(str8(e.name), dp); dp += 8;
   }
 
-  // Log directory for debugging
   console.table(entries.map(e => ({ lump: e.name, offset: e.off, size: e.size })));
 
   const blob = new Blob([wad], { type: 'application/octet-stream' });
@@ -1195,9 +1335,14 @@ function exportWAD() {
   a.download = 'map.wad';
   a.click();
   URL.revokeObjectURL(a.href);
-  showToast(`MAP01 exported — ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t` + (skipped ? ` (${skipped} bad ld skipped)` : ''));
+
+  let msg = `MAP01: ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t`;
+  const skipped = skippedLd + skippedSd + skippedSec;
+  if (skipped) msg += ` (${skipped} orphans skipped)`;
+  showToast(msg);
 }
 
+document.getElementById('clean-btn').addEventListener('click', cleanupMap);
 document.getElementById('wad-btn').addEventListener('click', exportWAD);
 
 // ── Init ──────────────────────────────────────────────────────────────────────
