@@ -1,7 +1,7 @@
 import {
-  maps, tool, selected, lineStart, lineChain, pan, zoom, isPanning, panStart,
+  maps, tool, selected, hovered, lineStart, lineChain, pan, zoom, isPanning, panStart,
   spaceDown, dragState, mouseWorld,
-  setSelected, setLineStart, setLineChain, setZoom, setIsPanning, setPanStart,
+  setSelected, setHovered, setLineStart, setLineChain, setZoom, setIsPanning, setPanStart,
   setSpaceDown, setDragState, setMouseWorld, setTool,
 } from '../state/appState';
 import { mapRef } from '../config/firebase';
@@ -42,7 +42,28 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       return;
     }
 
-    if (tool === 'line') draw();
+    if (tool === 'select') {
+      const wx = mouseWorld.x, wy = mouseWorld.y;
+      const vid = nearestVertex(wx, wy);
+      const tid = vid === null ? nearestThing(wx, wy) : null;
+      const lid = vid === null && tid === null ? nearestLinedef(wx, wy) : null;
+      let h: Selection | null = null;
+      if (vid !== null) h = { type: 'vertex', id: vid };
+      else if (tid !== null) h = { type: 'thing', id: tid };
+      else if (lid !== null) h = { type: 'linedef', id: lid };
+      else {
+        maps.sectors.forEach((_, sid) => {
+          const poly = buildSectorPoly(sid);
+          if (poly && pointInPoly(wx, wy, poly)) h = { type: 'sector', id: sid };
+        });
+      }
+      if (hovered?.type !== h?.type || hovered?.id !== h?.id) {
+        setHovered(h);
+        draw();
+      }
+    } else if (tool === 'line') {
+      draw();
+    }
   });
 
   canvas.addEventListener('mousedown', e => {
@@ -152,6 +173,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     setTool(t);
     setLineStart(null);
     setLineChain([]);
+    setHovered(null);
     document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     canvas.style.cursor = (t === 'select') ? 'default' : 'crosshair';
     draw();
