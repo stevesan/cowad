@@ -1,23 +1,24 @@
-import { mapRef } from '../config/firebase.js';
-import { maps, selected, setSelected, triggerRenderPanel } from '../state/appState.js';
-import { snap } from '../canvas/transforms.js';
-import { findEnclosingCycle } from '../geometry/cycleFinder.js';
-import { showToast } from '../ui/toast.js';
+import { mapRef } from '../config/firebase';
+import { maps, selected, setSelected, triggerRenderPanel } from '../state/appState';
+import { snap } from '../canvas/transforms';
+import { findEnclosingCycle } from '../geometry/cycleFinder';
+import { showToast } from '../ui/toast';
+import type { Linedef, Sidedef } from '../types';
 
-export function placeVertex(wx, wy) {
-  return mapRef('vertices').push({ x: snap(wx), y: snap(wy) }).then(r => r.key);
+export function placeVertex(wx: number, wy: number): Promise<string> {
+  return mapRef('vertices').push({ x: snap(wx), y: snap(wy) }).then((r: FirebaseRef) => r.key);
 }
 
-export function placeLine(v1id, v2id) {
+export function placeLine(v1id: string, v2id: string): Promise<FirebaseRef> {
   return mapRef('linedefs').push({ v1: v1id, v2: v2id, flags: 1, frontSide: null, backSide: null });
 }
 
-export function placeThing(wx, wy) {
-  const type = parseInt(document.getElementById('thing-type-sel').value, 10);
+export function placeThing(wx: number, wy: number): void {
+  const type = parseInt((document.getElementById('thing-type-sel') as HTMLSelectElement).value, 10);
   mapRef('things').push({ x: snap(wx), y: snap(wy), angle: 0, type, flags: 7 });
 }
 
-export function deleteLinedef(lid) {
+export function deleteLinedef(lid: string): void {
   const ld = maps.linedefs.get(lid);
   if (!ld) return;
   if (ld.frontSide) mapRef('sidedefs').child(ld.frontSide).remove();
@@ -25,11 +26,11 @@ export function deleteLinedef(lid) {
   mapRef('linedefs').child(lid).remove();
 }
 
-export function deleteSelected() {
+export function deleteSelected(): void {
   if (!selected) return;
   const { type, id } = selected;
   if (type === 'vertex') {
-    const lines = [];
+    const lines: string[] = [];
     maps.linedefs.forEach((ld, lid) => { if (ld.v1 === id || ld.v2 === id) lines.push(lid); });
     lines.forEach(deleteLinedef);
     mapRef('vertices').child(id).remove();
@@ -47,7 +48,7 @@ export function deleteSelected() {
   triggerRenderPanel();
 }
 
-export async function applySectorTool(wx, wy) {
+export async function applySectorTool(wx: number, wy: number): Promise<void> {
   const cycle = findEnclosingCycle(wx, wy);
   if (!cycle) { showToast('No closed region found.'); return; }
 
@@ -56,19 +57,22 @@ export async function applySectorTool(wx, wy) {
 
   for (let i = 0; i < cycle.length; i++) {
     const va = cycle[i], vb = cycle[(i + 1) % cycle.length];
-    let matchId = null, matchLd = null, reversed = false;
+    let matchId: string | null = null;
+    let matchLd: Linedef | null = null;
+    let reversed = false;
     maps.linedefs.forEach((ld, lid) => {
       if (ld.v1 === va && ld.v2 === vb) { matchId = lid; matchLd = ld; reversed = false; }
       else if (ld.v1 === vb && ld.v2 === va) { matchId = lid; matchLd = ld; reversed = true; }
     });
     if (!matchId || !matchLd) continue;
+    const ld = matchLd as Linedef;
 
-    let useFront;
-    if (!matchLd.frontSide) useFront = true;
-    else if (!matchLd.backSide) useFront = false;
+    let useFront: boolean;
+    if (!ld.frontSide) useFront = true;
+    else if (!ld.backSide) useFront = false;
     else continue;
 
-    const becomingTwoSided = useFront ? !!matchLd.backSide : !!matchLd.frontSide;
+    const becomingTwoSided = useFront ? !!ld.backSide : !!ld.frontSide;
 
     const sdRef = await mapRef('sidedefs').push({
       sector: sid, xoff: 0, yoff: 0,
@@ -77,18 +81,18 @@ export async function applySectorTool(wx, wy) {
       lower: 'STARTAN2',
     });
 
-    const updates = useFront ? { frontSide: sdRef.key } : { backSide: sdRef.key };
+    const updates: Record<string, any> = useFront ? { frontSide: sdRef.key } : { backSide: sdRef.key };
     if (becomingTwoSided) {
-      updates.flags = (matchLd.flags ?? 1) | 4 | 1;
-      const existingSdId = useFront ? matchLd.backSide : matchLd.frontSide;
-      const existingSd = existingSdId && maps.sidedefs.get(existingSdId);
+      updates.flags = (ld.flags ?? 1) | 4 | 1;
+      const existingSdId = useFront ? ld.backSide : ld.frontSide;
+      const existingSd = existingSdId ? maps.sidedefs.get(existingSdId) : null;
       if (existingSd) {
-        const sdFix = {};
+        const sdFix: Record<string, string> = {};
         if (!existingSd.upper || existingSd.upper === '-') sdFix.upper = 'STARTAN2';
         if (!existingSd.lower || existingSd.lower === '-') sdFix.lower = 'STARTAN2';
         if (!existingSd.mid   || existingSd.mid   === '-') sdFix.mid   = 'STARTAN2';
         if (Object.keys(sdFix).length)
-          await mapRef('sidedefs').child(existingSdId).update(sdFix);
+          await mapRef('sidedefs').child(existingSdId!).update(sdFix);
       }
     }
     await mapRef('linedefs').child(matchId).update(updates);

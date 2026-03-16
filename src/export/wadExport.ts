@@ -1,25 +1,38 @@
-import { maps } from '../state/appState.js';
-import { showToast } from '../ui/toast.js';
+import { maps } from '../state/appState';
+import { showToast } from '../ui/toast';
+import type { Linedef, Sidedef, Sector } from '../types';
 
-export function exportWAD() {
-  function str8(s) {
+interface ValidLinedef {
+  lid: string;
+  ld: Linedef;
+  v1i: number;
+  v2i: number;
+}
+
+interface Seg {
+  v1: number;
+  v2: number;
+  angle: number;
+  linedef: number;
+  side: number;
+  offset: number;
+}
+
+export function exportWAD(): void {
+  function str8(s: string | null | undefined): Uint8Array {
     const buf = new Uint8Array(8);
-    s = (s == null || s === '') ? '-' : String(s);
-    for (let i = 0; i < Math.min(s.length, 8); i++) buf[i] = s.charCodeAt(i);
+    const str = (s == null || s === '') ? '-' : String(s);
+    for (let i = 0; i < Math.min(str.length, 8); i++) buf[i] = str.charCodeAt(i);
     return buf;
   }
 
-  // ── Step 1: Index all vertices ──
-  const vertIdx = new Map();
+  const vertIdx = new Map<string, number>();
   let vi = 0; maps.vertices.forEach((_, id) => vertIdx.set(id, vi++));
 
-  // ── Step 2: Filter valid linedefs (both vertices exist, not degenerate) ──
-  // Also fix back-only linedefs inline (swap back→front, flip v1/v2)
-  const validLinedefs = [];
+  const validLinedefs: ValidLinedef[] = [];
   maps.linedefs.forEach((ld, lid) => {
     let v1i = vertIdx.get(ld.v1), v2i = vertIdx.get(ld.v2);
     if (v1i == null || v2i == null || v1i === v2i) return;
-    // Doom requires every linedef to have a front sidedef
     if (!ld.frontSide && ld.backSide) {
       ld = Object.assign({}, ld, {
         frontSide: ld.backSide, backSide: null,
@@ -30,34 +43,31 @@ export function exportWAD() {
     }
     validLinedefs.push({ lid, ld, v1i, v2i });
   });
-  const ldIdx = new Map();
+  const ldIdx = new Map<string, number>();
   validLinedefs.forEach(({ lid }, i) => ldIdx.set(lid, i));
 
-  // ── Step 3: Collect only sidedefs referenced by valid linedefs ──
-  const usedSdIds = new Set();
+  const usedSdIds = new Set<string>();
   for (const { ld } of validLinedefs) {
     if (ld.frontSide && maps.sidedefs.has(ld.frontSide)) usedSdIds.add(ld.frontSide);
     if (ld.backSide  && maps.sidedefs.has(ld.backSide))  usedSdIds.add(ld.backSide);
   }
 
-  // ── Step 4: Collect only sectors referenced by those sidedefs ──
-  const usedSecIds = new Set();
+  const usedSecIds = new Set<string>();
   for (const sdId of usedSdIds) {
     const sd = maps.sidedefs.get(sdId);
     if (sd && sd.sector && maps.sectors.has(sd.sector)) usedSecIds.add(sd.sector);
   }
 
-  // ── Step 5: Build contiguous indices for only referenced items ──
-  const sdIdx = new Map();
-  const exportSidedefs = [];
+  const sdIdx = new Map<string, number>();
+  const exportSidedefs: Sidedef[] = [];
   maps.sidedefs.forEach((sd, id) => {
     if (!usedSdIds.has(id)) return;
     sdIdx.set(id, exportSidedefs.length);
     exportSidedefs.push(sd);
   });
 
-  const secIdx = new Map();
-  const exportSectors = [];
+  const secIdx = new Map<string, number>();
+  const exportSectors: Sector[] = [];
   maps.sectors.forEach((sec, id) => {
     if (!usedSecIds.has(id)) return;
     secIdx.set(id, exportSectors.length);
@@ -70,8 +80,7 @@ export function exportWAD() {
   const skippedSd  = maps.sidedefs.size - nD;
   const skippedSec = maps.sectors.size  - nS;
 
-  // ── Pre-export validation ──
-  const issues = [];
+  const issues: string[] = [];
   if (!nT) issues.push('No things placed');
   else if (![...maps.things.values()].some(t => t.type === 1))
     issues.push('No Player 1 Start (thing type 1) — game will crash on load');
@@ -91,7 +100,7 @@ export function exportWAD() {
 
   if (issues.some(s => s.includes('Player 1 Start'))) showToast('Warning: no Player 1 Start');
 
-  // ── THINGS (10 bytes each) ──
+  // THINGS
   const thingsBuf = new ArrayBuffer(nT * 10);
   const thV = new DataView(thingsBuf); let to = 0;
   maps.things.forEach(th => {
@@ -102,7 +111,7 @@ export function exportWAD() {
     thV.setInt16(to, th.flags ?? 7,             true); to += 2;
   });
 
-  // ── LINEDEFS (14 bytes each) ──
+  // LINEDEFS
   const linesBuf = new ArrayBuffer(nL * 14);
   const lV = new DataView(linesBuf); let lo = 0;
   for (const { ld, v1i, v2i } of validLinedefs) {
@@ -111,11 +120,11 @@ export function exportWAD() {
     lV.setInt16(lo, ld.flags   ?? 1,true); lo += 2;
     lV.setInt16(lo, ld.special ?? 0,true); lo += 2;
     lV.setInt16(lo, ld.tag     ?? 0,true); lo += 2;
-    lV.setInt16(lo, ld.frontSide && sdIdx.has(ld.frontSide) ? sdIdx.get(ld.frontSide) : -1, true); lo += 2;
-    lV.setInt16(lo, ld.backSide  && sdIdx.has(ld.backSide)  ? sdIdx.get(ld.backSide)  : -1, true); lo += 2;
+    lV.setInt16(lo, ld.frontSide && sdIdx.has(ld.frontSide) ? sdIdx.get(ld.frontSide)! : -1, true); lo += 2;
+    lV.setInt16(lo, ld.backSide  && sdIdx.has(ld.backSide)  ? sdIdx.get(ld.backSide)!  : -1, true); lo += 2;
   }
 
-  // ── SIDEDEFS (30 bytes each) — only referenced ones ──
+  // SIDEDEFS
   const sidesBuf = new ArrayBuffer(nD * 30);
   const sV = new DataView(sidesBuf), sU = new Uint8Array(sidesBuf); let so = 0;
   for (const sd of exportSidedefs) {
@@ -127,7 +136,7 @@ export function exportWAD() {
     sV.setInt16(so, sd.sector != null ? (secIdx.get(sd.sector) ?? 0) : 0, true); so += 2;
   }
 
-  // ── VERTEXES (4 bytes each) ──
+  // VERTEXES
   const vertsBuf = new ArrayBuffer(nV * 4);
   const vV = new DataView(vertsBuf); let vo = 0;
   maps.vertices.forEach(v => {
@@ -135,16 +144,16 @@ export function exportWAD() {
     vV.setInt16(vo, Math.round(v.y ?? 0), true); vo += 2;
   });
 
-  // ── SEGS ──
-  const segList = [];
+  // SEGS
+  const segList: Seg[] = [];
   for (const { lid, ld, v1i, v2i } of validLinedefs) {
     if (!ld.frontSide || !sdIdx.has(ld.frontSide)) continue;
-    const v1 = maps.vertices.get(ld.v1), v2 = maps.vertices.get(ld.v2);
+    const v1 = maps.vertices.get(ld.v1)!, v2 = maps.vertices.get(ld.v2)!;
     const dx = v2.x - v1.x, dy = v2.y - v1.y;
     const ang = Math.round(Math.atan2(dy, dx) / (2 * Math.PI) * 65536) & 0xFFFF;
-    segList.push({ v1: v1i, v2: v2i, angle: ang, linedef: ldIdx.get(lid), side: 0, offset: 0 });
+    segList.push({ v1: v1i, v2: v2i, angle: ang, linedef: ldIdx.get(lid)!, side: 0, offset: 0 });
     if (ld.backSide && sdIdx.has(ld.backSide))
-      segList.push({ v1: v2i, v2: v1i, angle: (ang + 32768) & 0xFFFF, linedef: ldIdx.get(lid), side: 1, offset: 0 });
+      segList.push({ v1: v2i, v2: v1i, angle: (ang + 32768) & 0xFFFF, linedef: ldIdx.get(lid)!, side: 1, offset: 0 });
   }
   const segsBuf = new ArrayBuffer(segList.length * 12);
   const sgV = new DataView(segsBuf); let sgo = 0;
@@ -157,7 +166,7 @@ export function exportWAD() {
     sgV.setInt16(sgo, seg.offset,   true); sgo += 2;
   }
 
-  // ── SSECTORS ──
+  // SSECTORS
   const ssectorsBuf = segList.length ? new ArrayBuffer(4) : new ArrayBuffer(0);
   if (segList.length) {
     const ssV = new DataView(ssectorsBuf);
@@ -165,7 +174,7 @@ export function exportWAD() {
     ssV.setInt16(2, 0,              true);
   }
 
-  // ── SECTORS (only referenced ones) ──
+  // SECTORS
   const sectsBuf = new ArrayBuffer(nS * 26);
   const seV = new DataView(sectsBuf), seU = new Uint8Array(sectsBuf); let seo = 0;
   for (const sec of exportSectors) {
@@ -178,11 +187,11 @@ export function exportWAD() {
     seV.setInt16(seo, sec.tag     ?? 0,   true); seo += 2;
   }
 
-  // ── REJECT ──
+  // REJECT
   const rejectBuf = new ArrayBuffer(nS > 0 ? Math.ceil((nS * nS) / 8) : 0);
 
-  // ── BLOCKMAP ──
-  function buildBlockmap() {
+  // BLOCKMAP
+  function buildBlockmap(): ArrayBuffer {
     if (!nV || !nL) return new ArrayBuffer(0);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     maps.vertices.forEach(v => {
@@ -193,11 +202,11 @@ export function exportWAD() {
     const cols = Math.max(1, Math.ceil((maxX - ox) / 128) + 1);
     const rows = Math.max(1, Math.ceil((maxY - oy) / 128) + 1);
     const lineArr = validLinedefs.map(({ ld }, i) => {
-      const v1 = maps.vertices.get(ld.v1), v2 = maps.vertices.get(ld.v2);
+      const v1 = maps.vertices.get(ld.v1)!, v2 = maps.vertices.get(ld.v2)!;
       return { i, x0: Math.min(v1.x,v2.x), x1: Math.max(v1.x,v2.x),
                   y0: Math.min(v1.y,v2.y), y1: Math.max(v1.y,v2.y) };
     });
-    const blockLists = [];
+    const blockLists: number[][] = [];
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         const bx0 = ox + c*128, bx1 = bx0 + 128;
@@ -210,7 +219,7 @@ export function exportWAD() {
       }
     }
     const headerWords = 4 + cols * rows;
-    const offsets = []; let curOff = headerWords;
+    const offsets: number[] = []; let curOff = headerWords;
     for (const bl of blockLists) { offsets.push(curOff); curOff += bl.length; }
     const buf = new ArrayBuffer(curOff * 2);
     const dv = new DataView(buf); let p = 0;
@@ -223,7 +232,7 @@ export function exportWAD() {
     return buf;
   }
 
-  // ── Assemble PWAD ──
+  // Assemble PWAD
   const lumps = [
     { name: 'MAP01',    buf: new ArrayBuffer(0) },
     { name: 'THINGS',   buf: thingsBuf  },
@@ -248,7 +257,7 @@ export function exportWAD() {
   wdv.setInt32(8, dirOffset,    true);
 
   let off = 12;
-  const entries = [];
+  const entries: { off: number; size: number; name: string }[] = [];
   for (const l of lumps) {
     entries.push({ off, size: l.buf.byteLength, name: l.name });
     if (l.buf.byteLength > 0) { wu8.set(new Uint8Array(l.buf), off); off += l.buf.byteLength; }

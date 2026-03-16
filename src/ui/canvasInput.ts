@@ -3,20 +3,20 @@ import {
   spaceDown, dragState, mouseWorld,
   setSelected, setLineStart, setZoom, setIsPanning, setPanStart,
   setSpaceDown, setDragState, setMouseWorld, setTool,
-  triggerDraw, triggerRenderPanel,
-} from '../state/appState.js';
-import { mapRef } from '../config/firebase.js';
-import { w2s, s2w, snap } from '../canvas/transforms.js';
-import { nearestVertex, nearestLinedef, nearestThing, pointInPoly } from '../geometry/hitTest.js';
-import { buildSectorPoly } from '../geometry/cycleFinder.js';
-import { placeVertex, placeLine, placeThing, applySectorTool, deleteSelected } from '../map/mapActions.js';
-import { draw } from '../canvas/renderer.js';
-import { renderPanel } from './propertiesPanel.js';
+} from '../state/appState';
+import { mapRef } from '../config/firebase';
+import { s2w, snap } from '../canvas/transforms';
+import { nearestVertex, nearestLinedef, nearestThing, pointInPoly } from '../geometry/hitTest';
+import { buildSectorPoly } from '../geometry/cycleFinder';
+import { placeVertex, placeLine, placeThing, applySectorTool, deleteSelected } from '../map/mapActions';
+import { draw } from '../canvas/renderer';
+import { renderPanel } from './propertiesPanel';
+import type { ToolType, Selection } from '../types';
 
-function select(type, id) { setSelected({ type, id }); renderPanel(); }
+function select(type: Selection['type'], id: string): void { setSelected({ type, id }); renderPanel(); }
 
-export function initCanvasInput(canvas) {
-  function getCanvasXY(e) {
+export function initCanvasInput(canvas: HTMLCanvasElement): void {
+  function getCanvasXY(e: MouseEvent) {
     const r = canvas.getBoundingClientRect();
     return { sx: e.clientX - r.left, sy: e.clientY - r.top };
   }
@@ -26,7 +26,7 @@ export function initCanvasInput(canvas) {
   canvas.addEventListener('mousemove', e => {
     const { sx, sy } = getCanvasXY(e);
     setMouseWorld(s2w(sx, sy));
-    document.getElementById('coords').textContent =
+    document.getElementById('coords')!.textContent =
       `${Math.round(mouseWorld.x)}, ${Math.round(mouseWorld.y)}`;
 
     if (isPanning) {
@@ -70,7 +70,7 @@ export function initCanvasInput(canvas) {
       } else if (lid !== null) {
         select('linedef', lid);
       } else {
-        let found = null;
+        let found: string | null = null;
         maps.sectors.forEach((_, sid) => {
           const poly = buildSectorPoly(sid);
           if (poly && pointInPoly(wx, wy, poly)) found = sid;
@@ -124,25 +124,25 @@ export function initCanvasInput(canvas) {
   }, { passive: false });
 }
 
-export function initKeyboard(canvas) {
-  function doSetTool(t) {
+export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
+  function doSetTool(t: ToolType): void {
     setTool(t);
     setLineStart(null);
-    document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+    document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     canvas.style.cursor = (t === 'select') ? 'default' : 'crosshair';
     draw();
   }
 
   window.addEventListener('keydown', e => {
-    if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+    if (['INPUT','SELECT','TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
     if (e.key === ' ')      { setSpaceDown(true); e.preventDefault(); return; }
     if (e.key === 'Escape') { setLineStart(null); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
-    const map = { s: 'select', v: 'vertex', l: 'line', e: 'sector', t: 'thing' };
-    if (map[e.key.toLowerCase()]) doSetTool(map[e.key.toLowerCase()]);
+    const keyMap: Record<string, ToolType> = { s: 'select', v: 'vertex', l: 'line', e: 'sector', t: 'thing' };
+    const mapped = keyMap[e.key.toLowerCase()];
+    if (mapped) doSetTool(mapped);
   });
   window.addEventListener('keyup', e => { if (e.key === ' ') setSpaceDown(false); });
 
-  // Expose for toolbar buttons
   return doSetTool;
 }

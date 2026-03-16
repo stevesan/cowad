@@ -1,18 +1,19 @@
-import { maps, selected, lineStart, tool, mouseWorld, zoom } from '../state/appState.js';
-import { GRID, THINGS, CAT_COLOR } from '../config/constants.js';
-import { w2s, s2w, snap } from './transforms.js';
-import { buildSectorPoly } from '../geometry/cycleFinder.js';
+import { maps, selected, lineStart, tool, mouseWorld, zoom } from '../state/appState';
+import { GRID, THINGS, CAT_COLOR } from '../config/constants';
+import { w2s, s2w, snap } from './transforms';
+import { buildSectorPoly } from '../geometry/cycleFinder';
 
-let canvas, ctx;
+let canvas: HTMLCanvasElement;
+let ctx: CanvasRenderingContext2D;
 
-export function initRenderer(c) {
+export function initRenderer(c: HTMLCanvasElement): void {
   canvas = c;
-  ctx = canvas.getContext('2d');
+  ctx = canvas.getContext('2d')!;
 }
 
-export function getCanvas() { return canvas; }
+export function getCanvas(): HTMLCanvasElement { return canvas; }
 
-export function draw() {
+export function draw(): void {
   if (!canvas) return;
   const W = canvas.width, H = canvas.height;
   ctx.clearRect(0, 0, W, H);
@@ -26,7 +27,7 @@ export function draw() {
   drawLinePreview();
 }
 
-function drawGrid(W, H) {
+function drawGrid(W: number, H: number): void {
   const tl = s2w(0, 0), br = s2w(W, H);
   const x0 = Math.floor(tl.x / GRID) * GRID;
   const x1 = Math.ceil(br.x / GRID)  * GRID;
@@ -48,7 +49,7 @@ function drawGrid(W, H) {
   ctx.beginPath(); ctx.moveTo(0, o.y); ctx.lineTo(W, o.y); ctx.stroke();
 }
 
-function drawSectors() {
+function drawSectors(): void {
   maps.sectors.forEach((sec, sid) => {
     const poly = buildSectorPoly(sid);
     if (!poly || poly.length < 3) return;
@@ -68,7 +69,7 @@ function drawSectors() {
   });
 }
 
-function drawLinedefs() {
+function drawLinedefs(): void {
   maps.linedefs.forEach((ld, lid) => {
     const v1 = maps.vertices.get(ld.v1);
     const v2 = maps.vertices.get(ld.v2);
@@ -94,7 +95,7 @@ function drawLinedefs() {
   });
 }
 
-function drawVertices() {
+function drawVertices(): void {
   maps.vertices.forEach((v, vid) => {
     const s     = w2s(v.x, v.y);
     const isSel = selected   && selected.type   === 'vertex' && selected.id   === vid;
@@ -104,7 +105,7 @@ function drawVertices() {
   });
 }
 
-function drawThings() {
+function drawThings(): void {
   maps.things.forEach((th, tid) => {
     const s    = w2s(th.x, th.y);
     const info = THINGS[th.type] || { r: 16, cat: 'player' };
@@ -121,7 +122,7 @@ function drawThings() {
   });
 }
 
-function drawLinePreview() {
+function drawLinePreview(): void {
   if (tool !== 'line' || lineStart === null) return;
   const v = maps.vertices.get(lineStart);
   if (!v) return;

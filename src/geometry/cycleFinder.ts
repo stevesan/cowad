@@ -1,8 +1,9 @@
-import { maps } from '../state/appState.js';
-import { pointInPoly, polyArea } from './hitTest.js';
+import { maps } from '../state/appState';
+import { pointInPoly, polyArea } from './hitTest';
+import type { Point } from '../types';
 
-export function buildSectorPoly(sid) {
-  const edges = [];
+export function buildSectorPoly(sid: string): Point[] | null {
+  const edges: [string, string][] = [];
   maps.linedefs.forEach(ld => {
     const fs = ld.frontSide ? maps.sidedefs.get(ld.frontSide) : null;
     const bs = ld.backSide  ? maps.sidedefs.get(ld.backSide)  : null;
@@ -11,15 +12,15 @@ export function buildSectorPoly(sid) {
   });
   if (!edges.length) return null;
 
-  const adj = new Map();
+  const adj = new Map<string, string[]>();
   for (const [a, b] of edges) {
     if (!adj.has(a)) adj.set(a, []);
-    adj.get(a).push(b);
+    adj.get(a)!.push(b);
   }
 
   const start = edges[0][0];
-  const chain = [start];
-  const usedEdge = new Set([`${edges[0][0]}>${edges[0][1]}`]);
+  const chain: string[] = [start];
+  const usedEdge = new Set<string>([`${edges[0][0]}>${edges[0][1]}`]);
   let cur = edges[0][1];
   for (let i = 0; i < edges.length + 1; i++) {
     if (cur === start) break;
@@ -29,25 +30,25 @@ export function buildSectorPoly(sid) {
     usedEdge.add(`${cur}>${nexts[0]}`);
     cur = nexts[0];
   }
-  return chain.map(id => maps.vertices.get(id)).filter(Boolean);
+  return chain.map(id => maps.vertices.get(id)).filter((v): v is Point => !!v);
 }
 
-export function findEnclosingCycle(wx, wy) {
-  const adj = new Map();
+export function findEnclosingCycle(wx: number, wy: number): string[] | null {
+  const adj = new Map<string, Set<string>>();
   maps.linedefs.forEach(ld => {
     if (!adj.has(ld.v1)) adj.set(ld.v1, new Set());
     if (!adj.has(ld.v2)) adj.set(ld.v2, new Set());
-    adj.get(ld.v1).add(ld.v2);
-    adj.get(ld.v2).add(ld.v1);
+    adj.get(ld.v1)!.add(ld.v2);
+    adj.get(ld.v2)!.add(ld.v1);
   });
   if (!adj.size) return null;
 
   const MAX_DEPTH  = 18;
   const MAX_CYCLES = 300;
-  const cycles     = [];
-  const seenNorm   = new Set();
+  const cycles: string[][] = [];
+  const seenNorm = new Set<string>();
 
-  function normalizeCycle(c) {
+  function normalizeCycle(c: string[]): string {
     const min = c.reduce((a, b) => (a < b ? a : b));
     const i   = c.indexOf(min);
     const rot = [...c.slice(i), ...c.slice(0, i)];
@@ -58,13 +59,13 @@ export function findEnclosingCycle(wx, wy) {
 
   for (const start of adj.keys()) {
     if (cycles.length >= MAX_CYCLES) break;
-    const path    = [start];
-    const visited = new Set([start]);
+    const path: string[] = [start];
+    const visited = new Set<string>([start]);
 
-    (function dfs() {
+    (function dfs(): void {
       if (cycles.length >= MAX_CYCLES || path.length > MAX_DEPTH) return;
       const cur = path[path.length - 1];
-      for (const n of adj.get(cur)) {
+      for (const n of adj.get(cur)!) {
         if (path.length >= 3 && n === start) {
           const norm = normalizeCycle(path);
           if (!seenNorm.has(norm)) { seenNorm.add(norm); cycles.push([...path]); }
@@ -78,9 +79,9 @@ export function findEnclosingCycle(wx, wy) {
     })();
   }
 
-  let bestCycle = null, bestArea = Infinity;
+  let bestCycle: string[] | null = null, bestArea = Infinity;
   for (const cycle of cycles) {
-    const poly = cycle.map(id => maps.vertices.get(id)).filter(Boolean);
+    const poly = cycle.map(id => maps.vertices.get(id)).filter((v): v is Point => !!v);
     if (poly.length < 3 || !pointInPoly(wx, wy, poly)) continue;
     const a = polyArea(poly);
     if (a < bestArea) { bestArea = a; bestCycle = cycle; }

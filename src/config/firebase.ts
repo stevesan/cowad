@@ -8,8 +8,7 @@ const firebaseConfig = {
   appId: "1:395624694880:web:6c7750f08776cfd71daf05"
 };
 
-// Firebase SDK loaded via CDN sets window.firebase
 firebase.initializeApp(firebaseConfig);
 
 export const db = firebase.database();
-export function mapRef(col) { return db.ref('map/' + col); }
+export function mapRef(col: string): FirebaseRef { return db.ref('map/' + col); }
