@@ -1,4 +1,4 @@
-import { maps, selected, lineStart, tool, mouseWorld, zoom } from '../state/appState';
+import { maps, selected, lineStart, lineChain, tool, mouseWorld, zoom } from '../state/appState';
 import { GRID, THINGS, CAT_COLOR } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
 import { buildSectorPoly } from '../geometry/cycleFinder';
@@ -100,7 +100,8 @@ function drawVertices(): void {
     const s     = w2s(v.x, v.y);
     const isSel = selected   && selected.type   === 'vertex' && selected.id   === vid;
     const isLS  = lineStart !== null && lineStart === vid;
-    ctx.fillStyle = isLS ? '#f00' : isSel ? '#ff0' : '#0ff';
+    const isChainStart = lineChain.length >= 3 && lineChain[0] === vid;
+    ctx.fillStyle = isChainStart ? '#0f0' : isLS ? '#f00' : isSel ? '#ff0' : '#0ff';
     ctx.fillRect(s.x - 3, s.y - 3, 6, 6);
   });
 }
@@ -127,7 +128,26 @@ function drawLinePreview(): void {
   const v = maps.vertices.get(lineStart);
   if (!v) return;
   const s1 = w2s(v.x, v.y);
-  const s2 = w2s(snap(mouseWorld.x), snap(mouseWorld.y));
+  let s2 = w2s(snap(mouseWorld.x), snap(mouseWorld.y));
+
+  // Magnetic snap ring when near chain start vertex and loop can close
+  const SNAP_RADIUS = 30;
+  if (lineChain.length >= 3) {
+    const startV = maps.vertices.get(lineChain[0]);
+    if (startV) {
+      const startS = w2s(startV.x, startV.y);
+      const dist = Math.hypot(s2.x - startS.x, s2.y - startS.y);
+      if (dist < SNAP_RADIUS) {
+        s2 = startS;
+        ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+        ctx.beginPath(); ctx.arc(startS.x, startS.y, SNAP_RADIUS, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#0f0';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(startS.x, startS.y, SNAP_RADIUS, 0, Math.PI * 2); ctx.stroke();
+      }
+    }
+  }
+
   ctx.strokeStyle = '#ff0';
   ctx.lineWidth   = 1;
   ctx.setLineDash([4, 4]);

@@ -1,7 +1,7 @@
 import {
-  maps, tool, selected, lineStart, pan, zoom, isPanning, panStart,
+  maps, tool, selected, lineStart, lineChain, pan, zoom, isPanning, panStart,
   spaceDown, dragState, mouseWorld,
-  setSelected, setLineStart, setZoom, setIsPanning, setPanStart,
+  setSelected, setLineStart, setLineChain, setZoom, setIsPanning, setPanStart,
   setSpaceDown, setDragState, setMouseWorld, setTool,
 } from '../state/appState';
 import { mapRef } from '../config/firebase';
@@ -84,19 +84,42 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       placeVertex(wx, wy);
 
     } else if (tool === 'line') {
+      // Check for loop closure: clicking near chain start with 3+ vertices
+      const CLOSE_THRESH = 24 / zoom;
+      if (lineStart !== null && lineChain.length >= 3 && lineStart !== lineChain[0]) {
+        const startV = maps.vertices.get(lineChain[0]);
+        if (startV && Math.hypot(wx - startV.x, wy - startV.y) < CLOSE_THRESH) {
+          placeLine(lineStart, lineChain[0]);
+          // Compute centroid for sector detection
+          let cx = 0, cy = 0, n = 0;
+          for (const vid of lineChain) {
+            const vtx = maps.vertices.get(vid);
+            if (vtx) { cx += vtx.x; cy += vtx.y; n++; }
+          }
+          if (n > 0) applySectorTool(cx / n, cy / n);
+          setLineStart(null);
+          setLineChain([]);
+          draw();
+          return;
+        }
+      }
+
       const vid = nearestVertex(wx, wy);
       if (vid !== null) {
         if (lineStart === null) {
           setLineStart(vid);
+          setLineChain([vid]);
         } else {
           if (vid !== lineStart) placeLine(lineStart, vid);
           setLineStart(vid);
+          setLineChain([...lineChain, vid]);
         }
         draw();
       } else {
         placeVertex(wx, wy).then(newId => {
           if (lineStart !== null) placeLine(lineStart, newId);
           setLineStart(newId);
+          setLineChain([...lineChain, newId]);
           draw();
         });
       }
@@ -128,6 +151,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
   function doSetTool(t: ToolType): void {
     setTool(t);
     setLineStart(null);
+    setLineChain([]);
     document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     canvas.style.cursor = (t === 'select') ? 'default' : 'crosshair';
     draw();
@@ -136,7 +160,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
   window.addEventListener('keydown', e => {
     if (['INPUT','SELECT','TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
     if (e.key === ' ')      { setSpaceDown(true); e.preventDefault(); return; }
-    if (e.key === 'Escape') { setLineStart(null); draw(); return; }
+    if (e.key === 'Escape') { setLineStart(null); setLineChain([]); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
     const keyMap: Record<string, ToolType> = { s: 'select', v: 'vertex', l: 'line', e: 'sector', t: 'thing' };
     const mapped = keyMap[e.key.toLowerCase()];
