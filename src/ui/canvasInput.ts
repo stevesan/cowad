@@ -6,7 +6,7 @@ import {
 } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
-import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, segmentsProperlyIntersect } from '../geometry/hitTest';
+import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
 import { placeThing, deleteSelected, createSectorFromPolygon, splitSector } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
@@ -56,14 +56,15 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
       const midX = drawChain.reduce((s, p) => s + p.x, 0) / drawChain.length;
       const midY = drawChain.reduce((s, p) => s + p.y, 0) / drawChain.length;
       let splitSectorId: string | null = null;
+      let bestArea = Infinity;
       maps.sectors.forEach((_, sid) => {
-        if (splitSectorId) return;
         const loops = buildSectorLoopIds(sid);
         for (const loop of loops) {
           if (loop.includes(first.existingId!) && loop.includes(last.existingId!)) {
             const poly = buildSectorPoly(sid);
             if (poly && pointInPoly(midX, midY, poly)) {
-              splitSectorId = sid;
+              const a = polyArea(poly);
+              if (a < bestArea) { bestArea = a; splitSectorId = sid; }
             }
             break;
           }
@@ -127,7 +128,7 @@ function handleDrawClick(wx: number, wy: number): void {
   }
 
   // ── Close at different existing vert (first must be existing) ──
-  if (first.existingId && drawChain.length >= 2 && clickExisting &&
+  if (first.existingId && drawChain.length >= 1 && clickExisting &&
       !drawChain.some(p => p.existingId === clickExisting)) {
     // Validate last → click
     if (!validateNewEdge(last.x, last.y, clickX, clickY)) {
