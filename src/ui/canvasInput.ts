@@ -8,7 +8,7 @@ import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
 import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
-import { placeThing, deleteSelected, createSectorFromPolygon, splitSector } from '../map/mapActions';
+import { placeThing, deleteSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
@@ -180,6 +180,16 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
   }
 
   canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+  canvas.addEventListener('dblclick', e => {
+    if (tool !== 'select') return;
+    const { sx, sy } = getCanvasXY(e);
+    const { x: wx, y: wy } = s2w(sx, sy);
+    const lid = nearestLinedef(wx, wy);
+    if (lid === null) return;
+    splitLinedefAtPoint(lid, snap(wx), snap(wy));
+    draw();
+  });
 
   canvas.addEventListener('mousemove', e => {
     const { sx, sy } = getCanvasXY(e);

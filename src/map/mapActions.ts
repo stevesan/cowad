@@ -12,6 +12,64 @@ export function placeThing(wx: number, wy: number): void {
   record(`map/things/${ref.key}`, null, val);
 }
 
+export function splitLinedefAtPoint(lid: string, wx: number, wy: number): void {
+  const ld = maps.linedefs.get(lid);
+  if (!ld) return;
+  const v1 = maps.vertices.get(ld.v1);
+  const v2 = maps.vertices.get(ld.v2);
+  if (!v1 || !v2) return;
+  if ((wx === v1.x && wy === v1.y) || (wx === v2.x && wy === v2.y)) return;
+
+  beginAction();
+
+  // Create new vertex at split point
+  const vVal = { x: wx, y: wy };
+  const vRef = mapRef('vertices').push(vVal);
+  const midVid = vRef.key;
+  record(`map/vertices/${midVid}`, null, vVal);
+
+  // Capture original state
+  const origV2 = ld.v2;
+  const ldBefore = { ...ld };
+
+  // Shorten original linedef: v1→mid
+  record(`map/linedefs/${lid}`, ldBefore, { ...ldBefore, v2: midVid });
+  mapRef('linedefs').child(lid).update({ v2: midVid });
+
+  // Create new linedef: mid→origV2 with copied sidedefs
+  const newLd: any = { v1: midVid, v2: origV2, flags: ldBefore.flags };
+  if (ldBefore.special) newLd.special = ldBefore.special;
+  if (ldBefore.tag) newLd.tag = ldBefore.tag;
+
+  if (ldBefore.frontSide) {
+    const fsd = maps.sidedefs.get(ldBefore.frontSide);
+    if (fsd) {
+      const newFsd = { ...fsd };
+      const fsdRef = mapRef('sidedefs').push(newFsd);
+      record(`map/sidedefs/${fsdRef.key}`, null, newFsd);
+      newLd.frontSide = fsdRef.key;
+    }
+  }
+
+  if (ldBefore.backSide) {
+    const bsd = maps.sidedefs.get(ldBefore.backSide);
+    if (bsd) {
+      const newBsd = { ...bsd };
+      const bsdRef = mapRef('sidedefs').push(newBsd);
+      record(`map/sidedefs/${bsdRef.key}`, null, newBsd);
+      newLd.backSide = bsdRef.key;
+    }
+  }
+
+  const newLdRef = mapRef('linedefs').push(newLd);
+  record(`map/linedefs/${newLdRef.key}`, null, newLd);
+
+  endAction();
+
+  setSelected({ type: 'vertex', id: midVid });
+  triggerRenderPanel();
+}
+
 export function deleteLinedef(lid: string): void {
   const ld = maps.linedefs.get(lid);
   if (!ld) return;
