@@ -43,12 +43,87 @@ export function deleteSelected(): void {
   } else if (type === 'linedef') {
     deleteLinedef(id);
   } else if (type === 'sector') {
+    // Find all sidedefs belonging to this sector
+    const sectorSdIds = new Set<string>();
     maps.sidedefs.forEach((sd, sdid) => {
-      if (sd.sector === id) {
-        record(`map/sidedefs/${sdid}`, { ...sd }, { ...sd, sector: null });
-        mapRef('sidedefs').child(sdid).update({ sector: null });
+      if (sd.sector === id) sectorSdIds.add(sdid);
+    });
+
+    // For each linedef referencing these sidedefs, clean up
+    maps.linedefs.forEach((ld, lid) => {
+      const frontBelongs = ld.frontSide && sectorSdIds.has(ld.frontSide);
+      const backBelongs = ld.backSide && sectorSdIds.has(ld.backSide);
+      if (!frontBelongs && !backBelongs) return;
+
+      const ldBefore = { ...ld };
+
+      if (frontBelongs && backBelongs) {
+        // Both sides belong to deleted sector — remove entire linedef and both sidedefs
+        const fsd = maps.sidedefs.get(ld.frontSide!);
+        if (fsd) record(`map/sidedefs/${ld.frontSide}`, { ...fsd }, null);
+        mapRef('sidedefs').child(ld.frontSide!).remove();
+        const bsd = maps.sidedefs.get(ld.backSide!);
+        if (bsd) record(`map/sidedefs/${ld.backSide}`, { ...bsd }, null);
+        mapRef('sidedefs').child(ld.backSide!).remove();
+        record(`map/linedefs/${lid}`, ldBefore, null);
+        mapRef('linedefs').child(lid).remove();
+        // Remove orphaned vertices
+        for (const vid of [ld.v1, ld.v2]) {
+          let used = false;
+          maps.linedefs.forEach((other, olid) => {
+            if (olid !== lid && (other.v1 === vid || other.v2 === vid)) used = true;
+          });
+          if (!used) {
+            const v = maps.vertices.get(vid);
+            if (v) record(`map/vertices/${vid}`, { ...v }, null);
+            mapRef('vertices').child(vid).remove();
+          }
+        }
+      } else if (frontBelongs) {
+        // Front belongs to deleted sector, back stays — remove front sidedef
+        const fsd = maps.sidedefs.get(ld.frontSide!);
+        if (fsd) record(`map/sidedefs/${ld.frontSide}`, { ...fsd }, null);
+        mapRef('sidedefs').child(ld.frontSide!).remove();
+        if (ld.backSide) {
+          // Swap back to front, make single-sided
+          const updates: Record<string, any> = {
+            frontSide: ld.backSide, backSide: null,
+            v1: ld.v2, v2: ld.v1,
+            flags: ((ld.flags ?? 1) & ~4) | 1,
+          };
+          record(`map/linedefs/${lid}`, ldBefore, { ...ldBefore, ...updates });
+          mapRef('linedefs').child(lid).update(updates);
+          // Restore mid texture on the remaining sidedef
+          const bsd = maps.sidedefs.get(ld.backSide);
+          if (bsd && (!bsd.mid || bsd.mid === '-')) {
+            record(`map/sidedefs/${ld.backSide}`, { ...bsd }, { ...bsd, mid: 'STARTAN2' });
+            mapRef('sidedefs').child(ld.backSide).update({ mid: 'STARTAN2' });
+          }
+        } else {
+          // No back side either — remove linedef entirely
+          record(`map/linedefs/${lid}`, ldBefore, null);
+          mapRef('linedefs').child(lid).remove();
+        }
+      } else if (backBelongs) {
+        // Back belongs to deleted sector, front stays — remove back sidedef, make single-sided
+        const bsd = maps.sidedefs.get(ld.backSide!);
+        if (bsd) record(`map/sidedefs/${ld.backSide}`, { ...bsd }, null);
+        mapRef('sidedefs').child(ld.backSide!).remove();
+        const updates: Record<string, any> = {
+          backSide: null,
+          flags: ((ld.flags ?? 1) & ~4) | 1,
+        };
+        record(`map/linedefs/${lid}`, ldBefore, { ...ldBefore, ...updates });
+        mapRef('linedefs').child(lid).update(updates);
+        // Restore mid texture on the remaining front sidedef
+        const fsd = ld.frontSide ? maps.sidedefs.get(ld.frontSide) : null;
+        if (fsd && (!fsd.mid || fsd.mid === '-')) {
+          record(`map/sidedefs/${ld.frontSide}`, { ...fsd }, { ...fsd, mid: 'STARTAN2' });
+          mapRef('sidedefs').child(ld.frontSide!).update({ mid: 'STARTAN2' });
+        }
       }
     });
+
     const sec = maps.sectors.get(id);
     if (sec) record(`map/sectors/${id}`, { ...sec }, null);
     mapRef('sectors').child(id).remove();
@@ -81,24 +156,32 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
     }
   }
 
-  // 2. Find or create linedefs for each edge; detect template sector from shared lines
+  // 2. Compute winding order (positive signed area = CCW)
+  let signedArea2 = 0;
+  for (let i = 0; i < n; i++) {
+    const a = chain[i], b = chain[(i + 1) % n];
+    signedArea2 += a.x * b.y - b.x * a.y;
+  }
+  const isCCW = signedArea2 > 0;
+
+  // 3. Find or create linedefs for each edge; detect template sector from shared lines
   let templateSector: Record<string, any> | null = null;
-  const edgeLineIds: string[] = [];
-  const newLdData = new Map<string, any>(); // track locally-created linedefs
+  interface EdgeInfo { ldId: string; isNew: boolean; sameDirection: boolean; }
+  const edges: EdgeInfo[] = [];
+  const newLdData = new Map<string, any>();
 
   for (let i = 0; i < n; i++) {
     const va = vertexIds[i], vb = vertexIds[(i + 1) % n];
     let existingLdId: string | null = null;
+    let sameDir = false;
 
     maps.linedefs.forEach((ld, lid) => {
-      if ((ld.v1 === va && ld.v2 === vb) || (ld.v1 === vb && ld.v2 === va)) {
-        existingLdId = lid;
-      }
+      if (ld.v1 === va && ld.v2 === vb) { existingLdId = lid; sameDir = true; }
+      else if (ld.v1 === vb && ld.v2 === va) { existingLdId = lid; sameDir = false; }
     });
 
     if (existingLdId) {
-      edgeLineIds.push(existingLdId);
-      // Try to copy properties from adjacent sector
+      edges.push({ ldId: existingLdId, isNew: false, sameDirection: sameDir });
       if (!templateSector) {
         const ld = maps.linedefs.get(existingLdId)!;
         const sdId = ld.frontSide || ld.backSide;
@@ -109,29 +192,34 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
         }
       }
     } else {
-      const ldVal = { v1: va, v2: vb, flags: 1 };
+      // Orient new linedef so front side faces polygon interior
+      const v1 = isCCW ? vb : va;
+      const v2 = isCCW ? va : vb;
+      const ldVal = { v1, v2, flags: 1 };
       const ref = mapRef('linedefs').push(ldVal);
       record(`map/linedefs/${ref.key}`, null, ldVal);
-      edgeLineIds.push(ref.key);
+      edges.push({ ldId: ref.key, isNew: true, sameDirection: false });
       newLdData.set(ref.key, ldVal);
     }
   }
 
-  // 3. If no shared lines, check enclosing sector
+  // 4. If no shared lines, check enclosing sector
+  let enclosingSectorId: string | null = null;
   if (!templateSector) {
     let cx = 0, cy = 0;
     for (const pt of chain) { cx += pt.x; cy += pt.y; }
     cx /= n; cy /= n;
-    maps.sectors.forEach((sec, sid) => {
+    maps.sectors.forEach((sec, secId) => {
       if (templateSector) return;
-      const poly = buildSectorPoly(sid);
+      const poly = buildSectorPoly(secId);
       if (poly && pointInPoly(cx, cy, poly)) {
         templateSector = { ...sec };
+        enclosingSectorId = secId;
       }
     });
   }
 
-  // 4. Create sector
+  // 5. Create sector
   const secProps = templateSector
     ? { floor: templateSector.floor, ceiling: templateSector.ceiling, light: templateSector.light, special: templateSector.special || 0, tag: templateSector.tag || 0, floorTex: templateSector.floorTex || 'FLOOR4_8', ceilTex: templateSector.ceilTex || 'CEIL3_5' }
     : { floor: 0, ceiling: 128, light: 160, special: 0, tag: 0, floorTex: 'FLOOR4_8', ceilTex: 'CEIL3_5' };
@@ -140,18 +228,24 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
   const sid = secRef.key;
   record(`map/sectors/${sid}`, null, secProps);
 
-  // 5. Create sidedefs and link to linedefs
+  // 6. Create sidedefs and link to linedefs
   for (let i = 0; i < n; i++) {
-    const ldId = edgeLineIds[i];
-    const ld: Linedef | undefined = maps.linedefs.get(ldId) || newLdData.get(ldId);
+    const edge = edges[i];
+    const ld: Linedef | undefined = maps.linedefs.get(edge.ldId) || newLdData.get(edge.ldId);
     if (!ld) continue;
 
     let useFront: boolean;
-    if (!ld.frontSide) useFront = true;
-    else if (!ld.backSide) useFront = false;
-    else continue;
+    if (edge.isNew) {
+      useFront = true; // new linedefs are oriented so front = interior
+    } else {
+      // Correct side: front when (sameDirection XOR isCCW)
+      useFront = edge.sameDirection !== isCCW;
+      if (useFront && ld.frontSide) continue; // already taken
+      if (!useFront && ld.backSide) continue;
+    }
 
-    const becomingTwoSided = useFront ? !!ld.backSide : !!ld.frontSide;
+    const becomingTwoSided = (useFront ? !!ld.backSide : !!ld.frontSide)
+      || (edge.isNew && !!enclosingSectorId);
 
     const sdVal = {
       sector: sid, xoff: 0, yoff: 0,
@@ -161,7 +255,18 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
     record(`map/sidedefs/${sdRef.key}`, null, sdVal);
 
     const updates: Record<string, any> = useFront ? { frontSide: sdRef.key } : { backSide: sdRef.key };
-    if (becomingTwoSided) {
+
+    // New linedef inside an enclosing sector: create back sidedef for the enclosing sector
+    if (edge.isNew && enclosingSectorId) {
+      const backSdVal = {
+        sector: enclosingSectorId, xoff: 0, yoff: 0,
+        upper: 'STARTAN2', mid: '-', lower: 'STARTAN2',
+      };
+      const backSdRef = await mapRef('sidedefs').push(backSdVal);
+      record(`map/sidedefs/${backSdRef.key}`, null, backSdVal);
+      updates.backSide = backSdRef.key;
+      updates.flags = ((ld.flags ?? 1) | 4) & ~1;
+    } else if (becomingTwoSided) {
       updates.flags = ((ld.flags ?? 1) | 4) & ~1;
       const existingSdId = useFront ? ld.backSide : ld.frontSide;
       const existingSd = existingSdId ? maps.sidedefs.get(existingSdId) : null;
@@ -175,9 +280,9 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
       }
     }
 
-    const ldBefore = maps.linedefs.get(ldId) || newLdData.get(ldId);
-    if (ldBefore) record(`map/linedefs/${ldId}`, { ...ldBefore }, { ...ldBefore, ...updates });
-    await mapRef('linedefs').child(ldId).update(updates);
+    const ldBefore = maps.linedefs.get(edge.ldId) || newLdData.get(edge.ldId);
+    if (ldBefore) record(`map/linedefs/${edge.ldId}`, { ...ldBefore }, { ...ldBefore, ...updates });
+    await mapRef('linedefs').child(edge.ldId).update(updates);
   }
 
   setSelected({ type: 'sector', id: sid });

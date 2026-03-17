@@ -35,7 +35,6 @@ export function cleanupMap(): void {
       const upd: Record<string, string> = {};
       if (!sd.upper || sd.upper === '-') upd.upper = 'STARTAN2';
       if (!sd.lower || sd.lower === '-') upd.lower = 'STARTAN2';
-      if (!sd.mid   || sd.mid   === '-') upd.mid   = 'STARTAN2';
       if (Object.keys(upd).length) { mapRef('sidedefs').child(sdId).update(upd); fixed.tex++; }
     });
   });
