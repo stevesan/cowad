@@ -1,7 +1,7 @@
 import { maps, selected, hovered, tool, mouseWorld, zoom, drawPoints } from '../state/appState';
 import { GRID, THINGS, CAT_COLOR } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
-import { buildSectorPoly } from '../geometry/cycleFinder';
+import { buildSectorPoly, buildSectorPolys } from '../geometry/cycleFinder';
 import { nearestVertex } from '../geometry/hitTest';
 
 let canvas: HTMLCanvasElement;
@@ -52,8 +52,8 @@ function drawGrid(W: number, H: number): void {
 
 function drawSectors(): void {
   maps.sectors.forEach((sec, sid) => {
-    const poly = buildSectorPoly(sid);
-    if (!poly || poly.length < 3) return;
+    const loops = buildSectorPolys(sid);
+    if (!loops.length) return;
     const isSel = selected && selected.type === 'sector' && selected.id === sid;
     const isHov = hovered  && hovered.type  === 'sector' && hovered.id  === sid;
     const light = Math.max(0, Math.min(255, sec.light ?? 160));
@@ -62,13 +62,15 @@ function drawSectors(): void {
       ? `rgb(${c + 20},${c + 20},${Math.round(c * 0.75) + 15})`
       : `rgb(${c},${c},${Math.round(c * 0.75)})`;
     ctx.beginPath();
-    const p0 = w2s(poly[0].x, poly[0].y);
-    ctx.moveTo(p0.x, p0.y);
-    for (let i = 1; i < poly.length; i++) {
-      const p = w2s(poly[i].x, poly[i].y); ctx.lineTo(p.x, p.y);
+    for (const poly of loops) {
+      const p0 = w2s(poly[0].x, poly[0].y);
+      ctx.moveTo(p0.x, p0.y);
+      for (let i = 1; i < poly.length; i++) {
+        const p = w2s(poly[i].x, poly[i].y); ctx.lineTo(p.x, p.y);
+      }
+      ctx.closePath();
     }
-    ctx.closePath();
-    ctx.fill();
+    ctx.fill('evenodd');
     if (isSel) { ctx.strokeStyle = '#ff0'; ctx.lineWidth = 2; ctx.stroke(); }
     else if (isHov) { ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'; ctx.lineWidth = 1; ctx.stroke(); }
   });

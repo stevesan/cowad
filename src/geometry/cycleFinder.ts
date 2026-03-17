@@ -2,7 +2,8 @@ import { maps } from '../state/appState';
 import { pointInPoly, polyArea } from './hitTest';
 import type { Point } from '../types';
 
-export function buildSectorPoly(sid: string): Point[] | null {
+/** Return all boundary loops for a sector (outer + holes). */
+export function buildSectorPolys(sid: string): Point[][] {
   const edges: [string, string][] = [];
   maps.linedefs.forEach(ld => {
     const fs = ld.frontSide ? maps.sidedefs.get(ld.frontSide) : null;
@@ -10,7 +11,7 @@ export function buildSectorPoly(sid: string): Point[] | null {
     if (fs && fs.sector === sid) edges.push([ld.v1, ld.v2]);
     if (bs && bs.sector === sid) edges.push([ld.v2, ld.v1]);
   });
-  if (!edges.length) return null;
+  if (!edges.length) return [];
 
   const adj = new Map<string, string[]>();
   for (const [a, b] of edges) {
@@ -18,19 +19,43 @@ export function buildSectorPoly(sid: string): Point[] | null {
     adj.get(a)!.push(b);
   }
 
-  const start = edges[0][0];
-  const chain: string[] = [start];
-  const usedEdge = new Set<string>([`${edges[0][0]}>${edges[0][1]}`]);
-  let cur = edges[0][1];
-  for (let i = 0; i < edges.length + 1; i++) {
-    if (cur === start) break;
-    chain.push(cur);
-    const nexts = (adj.get(cur) || []).filter(n => !usedEdge.has(`${cur}>${n}`));
-    if (!nexts.length) break;
-    usedEdge.add(`${cur}>${nexts[0]}`);
-    cur = nexts[0];
+  const usedEdges = new Set<string>();
+  const loops: Point[][] = [];
+
+  for (const [startA, startB] of edges) {
+    const key = `${startA}>${startB}`;
+    if (usedEdges.has(key)) continue;
+    usedEdges.add(key);
+
+    const chain: string[] = [startA];
+    let cur = startB;
+
+    for (let i = 0; i < edges.length + 1; i++) {
+      if (cur === startA) break;
+      chain.push(cur);
+      const nexts = (adj.get(cur) || []).filter(n => !usedEdges.has(`${cur}>${n}`));
+      if (!nexts.length) break;
+      usedEdges.add(`${cur}>${nexts[0]}`);
+      cur = nexts[0];
+    }
+
+    const poly = chain.map(id => maps.vertices.get(id)).filter((v): v is Point => !!v);
+    if (poly.length >= 3) loops.push(poly);
   }
-  return chain.map(id => maps.vertices.get(id)).filter((v): v is Point => !!v);
+
+  return loops;
+}
+
+/** Return the outer boundary polygon for a sector (largest loop). */
+export function buildSectorPoly(sid: string): Point[] | null {
+  const loops = buildSectorPolys(sid);
+  if (!loops.length) return null;
+  let best = loops[0], bestArea = polyArea(best);
+  for (let i = 1; i < loops.length; i++) {
+    const a = polyArea(loops[i]);
+    if (a > bestArea) { bestArea = a; best = loops[i]; }
+  }
+  return best;
 }
 
 export function findEnclosingCycle(wx: number, wy: number): string[] | null {
