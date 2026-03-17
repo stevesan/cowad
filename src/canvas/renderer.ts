@@ -150,7 +150,20 @@ function drawThings(): void {
 }
 
 function drawPolygonPreview(): void {
-  if (tool !== 'draw' || drawPoints.length === 0) return;
+  if (tool !== 'draw') return;
+
+  // Show magnetic snap circle before first click
+  if (drawPoints.length === 0) {
+    const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y);
+    if (nearVid) {
+      const v = maps.vertices.get(nearVid)!;
+      const s = w2s(v.x, v.y);
+      ctx.strokeStyle = '#0ff';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, Math.PI * 2); ctx.stroke();
+    }
+    return;
+  }
 
   const first = drawPoints[0];
   const last = drawPoints[drawPoints.length - 1];
