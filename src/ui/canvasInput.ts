@@ -7,8 +7,8 @@ import {
 import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
 import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, segmentsProperlyIntersect } from '../geometry/hitTest';
-import { buildSectorPoly } from '../geometry/cycleFinder';
-import { placeThing, deleteSelected, createSectorFromPolygon } from '../map/mapActions';
+import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
+import { placeThing, deleteSelected, createSectorFromPolygon, splitSector } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
@@ -48,7 +48,35 @@ function validateNewEdge(ax: number, ay: number, bx: number, by: number): boolea
   return true;
 }
 
-async function completeSector(): Promise<void> {
+async function completeSector(checkSplit: boolean = false): Promise<void> {
+  if (checkSplit) {
+    const first = drawChain[0];
+    const last = drawChain[drawChain.length - 1];
+    if (first.existingId && last.existingId && first.existingId !== last.existingId) {
+      const midX = drawChain.reduce((s, p) => s + p.x, 0) / drawChain.length;
+      const midY = drawChain.reduce((s, p) => s + p.y, 0) / drawChain.length;
+      let splitSectorId: string | null = null;
+      maps.sectors.forEach((_, sid) => {
+        if (splitSectorId) return;
+        const loops = buildSectorLoopIds(sid);
+        for (const loop of loops) {
+          if (loop.includes(first.existingId!) && loop.includes(last.existingId!)) {
+            const poly = buildSectorPoly(sid);
+            if (poly && pointInPoly(midX, midY, poly)) {
+              splitSectorId = sid;
+            }
+            break;
+          }
+        }
+      });
+      if (splitSectorId) {
+        await splitSector(drawChain, splitSectorId);
+        resetDraw();
+        draw();
+        return;
+      }
+    }
+  }
   await createSectorFromPolygon(drawChain);
   resetDraw();
   draw();
@@ -105,12 +133,30 @@ function handleDrawClick(wx: number, wy: number): void {
     if (!validateNewEdge(last.x, last.y, clickX, clickY)) {
       showToast('Edge would intersect'); return;
     }
-    // Validate click → first (closing)
-    if (!validateNewEdge(clickX, clickY, first.x, first.y)) {
+    // For non-split polygons, also validate closing edge (click → first)
+    // For splits the closing edge runs along the sector boundary, not through free space
+    const isSplit = (() => {
+      const midX = (drawChain.reduce((s, p) => s + p.x, 0) + clickX) / (drawChain.length + 1);
+      const midY = (drawChain.reduce((s, p) => s + p.y, 0) + clickY) / (drawChain.length + 1);
+      let found = false;
+      maps.sectors.forEach((_, sid) => {
+        if (found) return;
+        const loops = buildSectorLoopIds(sid);
+        for (const loop of loops) {
+          if (loop.includes(first.existingId!) && loop.includes(clickExisting!)) {
+            const poly = buildSectorPoly(sid);
+            if (poly && pointInPoly(midX, midY, poly)) found = true;
+            break;
+          }
+        }
+      });
+      return found;
+    })();
+    if (!isSplit && !validateNewEdge(clickX, clickY, first.x, first.y)) {
       showToast('Closing edge would intersect'); return;
     }
     drawChain.push({ x: clickX, y: clickY, existingId: clickExisting });
-    completeSector();
+    completeSector(true);
     return;
   }
 

@@ -1,9 +1,9 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, triggerRenderPanel } from '../state/appState';
-import { buildSectorPoly } from '../geometry/cycleFinder';
+import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
 import { pointInPoly } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
-import type { DrawVertex, Linedef } from '../types';
+import type { DrawVertex, Linedef, Point } from '../types';
 
 export function placeThing(wx: number, wy: number): void {
   const type = parseInt((document.getElementById('thing-type-sel') as HTMLSelectElement).value, 10);
@@ -286,6 +286,165 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
   }
 
   setSelected({ type: 'sector', id: sid });
+  triggerRenderPanel();
+  endAction();
+}
+
+export async function splitSector(chain: DrawVertex[], sectorId: string): Promise<void> {
+  const n = chain.length;
+  if (n < 2) return;
+
+  const startVid = chain[0].existingId!;
+  const endVid = chain[n - 1].existingId!;
+
+  // Capture loops BEFORE modifications
+  const loops = buildSectorLoopIds(sectorId);
+  let targetLoop: string[] | null = null;
+  for (const loop of loops) {
+    if (loop.includes(startVid) && loop.includes(endVid)) {
+      targetLoop = loop;
+      break;
+    }
+  }
+  if (!targetLoop) return;
+
+  const si = targetLoop.indexOf(startVid);
+  const ei = targetLoop.indexOf(endVid);
+  const loopLen = targetLoop.length;
+
+  // path1: si→ei forward in loop (gets new sector)
+  const path1: string[] = [];
+  for (let i = si; ; ) {
+    path1.push(targetLoop[i]);
+    if (i === ei) break;
+    i = (i + 1) % loopLen;
+  }
+
+  // path2: ei→si forward in loop (keeps original sector)
+  const path2: string[] = [];
+  for (let i = ei; ; ) {
+    path2.push(targetLoop[i]);
+    if (i === si) break;
+    i = (i + 1) % loopLen;
+  }
+
+  beginAction();
+
+  // 1. Create vertices for chain intermediates
+  const chainVids: string[] = [startVid];
+  for (let i = 1; i < n - 1; i++) {
+    const pt = chain[i];
+    if (pt.existingId) {
+      chainVids.push(pt.existingId);
+    } else {
+      const val = { x: pt.x, y: pt.y };
+      const ref = mapRef('vertices').push(val);
+      record(`map/vertices/${ref.key}`, null, val);
+      chainVids.push(ref.key);
+    }
+  }
+  chainVids.push(endVid);
+
+  // 2. Create new sector with same properties
+  const origSec = maps.sectors.get(sectorId)!;
+  const secProps = { ...origSec };
+  const secRef = await mapRef('sectors').push(secProps);
+  const newSid = secRef.key;
+  record(`map/sectors/${newSid}`, null, secProps);
+
+  // 3. Reassign path1 edges: change sidedefs from original to new sector
+  for (let i = 0; i < path1.length - 1; i++) {
+    const va = path1[i], vb = path1[i + 1];
+    maps.linedefs.forEach((ld, _lid) => {
+      if ((ld.v1 === va && ld.v2 === vb) || (ld.v1 === vb && ld.v2 === va)) {
+        for (const sdId of [ld.frontSide, ld.backSide]) {
+          if (!sdId) continue;
+          const sd = maps.sidedefs.get(sdId);
+          if (sd && sd.sector === sectorId) {
+            record(`map/sidedefs/${sdId}`, { ...sd }, { ...sd, sector: newSid });
+            mapRef('sidedefs').child(sdId).update({ sector: newSid });
+          }
+        }
+      }
+    });
+  }
+
+  // 4. Create chain linedefs (two-sided: front=original, back=new)
+  for (let i = 0; i < chainVids.length - 1; i++) {
+    const va = chainVids[i], vb = chainVids[i + 1];
+
+    // Skip if linedef already exists between these vertices
+    let exists = false;
+    maps.linedefs.forEach(ld => {
+      if ((ld.v1 === va && ld.v2 === vb) || (ld.v1 === vb && ld.v2 === va)) exists = true;
+    });
+    if (exists) continue;
+
+    // Orient in chain direction: front (right) = original sector, back (left) = new sector
+    const ldVal: any = { v1: va, v2: vb, flags: 4 };
+    const ldRef = mapRef('linedefs').push(ldVal);
+    record(`map/linedefs/${ldRef.key}`, null, ldVal);
+
+    const frontSdVal = {
+      sector: sectorId, xoff: 0, yoff: 0,
+      upper: 'STARTAN2', mid: '-', lower: 'STARTAN2',
+    };
+    const frontSdRef = await mapRef('sidedefs').push(frontSdVal);
+    record(`map/sidedefs/${frontSdRef.key}`, null, frontSdVal);
+
+    const backSdVal = {
+      sector: newSid, xoff: 0, yoff: 0,
+      upper: 'STARTAN2', mid: '-', lower: 'STARTAN2',
+    };
+    const backSdRef = await mapRef('sidedefs').push(backSdVal);
+    record(`map/sidedefs/${backSdRef.key}`, null, backSdVal);
+
+    const ldUpdates = { frontSide: frontSdRef.key, backSide: backSdRef.key };
+    record(`map/linedefs/${ldRef.key}`, ldVal, { ...ldVal, ...ldUpdates });
+    await mapRef('linedefs').child(ldRef.key).update(ldUpdates);
+  }
+
+  // 5. Reassign holes to correct sector
+  const newSecPoly: Point[] = [];
+  for (const vid of path1) {
+    const v = maps.vertices.get(vid);
+    if (v) newSecPoly.push(v);
+  }
+  for (let i = chainVids.length - 2; i >= 1; i--) {
+    const v = maps.vertices.get(chainVids[i]);
+    if (v) newSecPoly.push(v);
+  }
+
+  for (const holeLoop of loops) {
+    if (holeLoop === targetLoop) continue;
+    let cx = 0, cy = 0, cnt = 0;
+    for (const vid of holeLoop) {
+      const v = maps.vertices.get(vid);
+      if (v) { cx += v.x; cy += v.y; cnt++; }
+    }
+    if (!cnt) continue;
+    cx /= cnt; cy /= cnt;
+
+    if (pointInPoly(cx, cy, newSecPoly)) {
+      for (let i = 0; i < holeLoop.length; i++) {
+        const va = holeLoop[i], vb = holeLoop[(i + 1) % holeLoop.length];
+        maps.linedefs.forEach(ld => {
+          if ((ld.v1 === va && ld.v2 === vb) || (ld.v1 === vb && ld.v2 === va)) {
+            for (const sdId of [ld.frontSide, ld.backSide]) {
+              if (!sdId) continue;
+              const sd = maps.sidedefs.get(sdId);
+              if (sd && sd.sector === sectorId) {
+                record(`map/sidedefs/${sdId}`, { ...sd }, { ...sd, sector: newSid });
+                mapRef('sidedefs').child(sdId).update({ sector: newSid });
+              }
+            }
+          }
+        });
+      }
+    }
+  }
+
+  setSelected({ type: 'sector', id: newSid });
   triggerRenderPanel();
   endAction();
 }
