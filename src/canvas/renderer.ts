@@ -58,7 +58,9 @@ function drawSectors(): void {
     const isHov = hovered  && hovered.type  === 'sector' && hovered.id  === sid;
     const light = Math.max(0, Math.min(255, sec.light ?? 160));
     const c = Math.round(20 + (light / 255) * 70);
-    ctx.fillStyle = isHov && !isSel
+    ctx.fillStyle = isSel
+      ? `rgb(${c + 40},${c + 30},${Math.round(c * 0.4)})`
+      : isHov
       ? `rgb(${c + 20},${c + 20},${Math.round(c * 0.75) + 15})`
       : `rgb(${c},${c},${Math.round(c * 0.75)})`;
     ctx.beginPath();
