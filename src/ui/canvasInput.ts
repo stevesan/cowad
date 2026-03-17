@@ -137,16 +137,13 @@ function handleDrawClick(wx: number, wy: number): void {
     // For non-split polygons, also validate closing edge (click → first)
     // For splits the closing edge runs along the sector boundary, not through free space
     const isSplit = (() => {
-      const midX = (drawChain.reduce((s, p) => s + p.x, 0) + clickX) / (drawChain.length + 1);
-      const midY = (drawChain.reduce((s, p) => s + p.y, 0) + clickY) / (drawChain.length + 1);
       let found = false;
       maps.sectors.forEach((_, sid) => {
         if (found) return;
         const loops = buildSectorLoopIds(sid);
         for (const loop of loops) {
           if (loop.includes(first.existingId!) && loop.includes(clickExisting!)) {
-            const poly = buildSectorPoly(sid);
-            if (poly && pointInPoly(midX, midY, poly)) found = true;
+            found = true;
             break;
           }
         }
