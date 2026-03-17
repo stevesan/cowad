@@ -53,8 +53,6 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
     const first = drawChain[0];
     const last = drawChain[drawChain.length - 1];
     if (first.existingId && last.existingId && first.existingId !== last.existingId) {
-      const midX = drawChain.reduce((s, p) => s + p.x, 0) / drawChain.length;
-      const midY = drawChain.reduce((s, p) => s + p.y, 0) / drawChain.length;
       let splitSectorId: string | null = null;
       let bestArea = Infinity;
       maps.sectors.forEach((_, sid) => {
@@ -62,7 +60,7 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
         for (const loop of loops) {
           if (loop.includes(first.existingId!) && loop.includes(last.existingId!)) {
             const poly = buildSectorPoly(sid);
-            if (poly && pointInPoly(midX, midY, poly)) {
+            if (poly) {
               const a = polyArea(poly);
               if (a < bestArea) { bestArea = a; splitSectorId = sid; }
             }
