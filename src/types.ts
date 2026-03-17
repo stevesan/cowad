@@ -51,7 +51,13 @@ export interface MapData {
 
 export type MapCollection = 'vertices' | 'linedefs' | 'sidedefs' | 'sectors' | 'things';
 
-export type ToolType = 'select' | 'vertex' | 'line' | 'sector' | 'thing';
+export type ToolType = 'select' | 'draw' | 'thing';
+
+export interface DrawVertex {
+  x: number;
+  y: number;
+  existingId: string | null;
+}
 
 export interface Selection {
   type: 'vertex' | 'linedef' | 'sector' | 'thing';

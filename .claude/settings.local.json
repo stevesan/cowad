@@ -5,7 +5,8 @@
       "Bash(npx playwright:*)",
       "Bash(npm test:*)",
       "Bash(npx tsc:*)",
-      "Bash(npx vite:*)"
+      "Bash(npx vite:*)",
+      "Bash(find:*)"
     ]
   }
 }

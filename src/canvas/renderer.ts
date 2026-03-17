@@ -1,7 +1,8 @@
-import { maps, selected, hovered, lineStart, lineChain, tool, mouseWorld, zoom } from '../state/appState';
+import { maps, selected, hovered, tool, mouseWorld, zoom, drawPoints } from '../state/appState';
 import { GRID, THINGS, CAT_COLOR } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
 import { buildSectorPoly } from '../geometry/cycleFinder';
+import { nearestVertex } from '../geometry/hitTest';
 
 let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
@@ -24,7 +25,7 @@ export function draw(): void {
   drawLinedefs();
   drawVertices();
   drawThings();
-  drawLinePreview();
+  drawPolygonPreview();
 }
 
 function drawGrid(W: number, H: number): void {
@@ -108,16 +109,14 @@ function drawLinedefs(): void {
 function drawVertices(): void {
   maps.vertices.forEach((v, vid) => {
     const s     = w2s(v.x, v.y);
-    const isSel = selected   && selected.type   === 'vertex' && selected.id   === vid;
-    const isHov = hovered    && hovered.type    === 'vertex' && hovered.id    === vid;
-    const isLS  = lineStart !== null && lineStart === vid;
-    const isChainStart = lineChain.length >= 3 && lineChain[0] === vid;
+    const isSel = selected && selected.type === 'vertex' && selected.id === vid;
+    const isHov = hovered  && hovered.type  === 'vertex' && hovered.id  === vid;
     if (isHov && !isSel) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.fillStyle = isChainStart ? '#0f0' : isLS ? '#f00' : isSel ? '#ff0' : isHov ? '#fff' : '#0ff';
+    ctx.fillStyle = isSel ? '#ff0' : isHov ? '#fff' : '#0ff';
     const sz = isHov || isSel ? 4 : 3;
     ctx.fillRect(s.x - sz, s.y - sz, sz * 2, sz * 2);
   });
@@ -146,34 +145,92 @@ function drawThings(): void {
   });
 }
 
-function drawLinePreview(): void {
-  if (tool !== 'line' || lineStart === null) return;
-  const v = maps.vertices.get(lineStart);
-  if (!v) return;
-  const s1 = w2s(v.x, v.y);
-  let s2 = w2s(snap(mouseWorld.x), snap(mouseWorld.y));
+function drawPolygonPreview(): void {
+  if (tool !== 'draw' || drawPoints.length === 0) return;
 
-  // Magnetic snap ring when near chain start vertex and loop can close
-  const SNAP_RADIUS = 30;
-  if (lineChain.length >= 3) {
-    const startV = maps.vertices.get(lineChain[0]);
-    if (startV) {
-      const startS = w2s(startV.x, startV.y);
-      const dist = Math.hypot(s2.x - startS.x, s2.y - startS.y);
-      if (dist < SNAP_RADIUS) {
-        s2 = startS;
-        ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
-        ctx.beginPath(); ctx.arc(startS.x, startS.y, SNAP_RADIUS, 0, Math.PI * 2); ctx.fill();
-        ctx.strokeStyle = '#0f0';
-        ctx.lineWidth = 2;
-        ctx.beginPath(); ctx.arc(startS.x, startS.y, SNAP_RADIUS, 0, Math.PI * 2); ctx.stroke();
-      }
+  const first = drawPoints[0];
+  const last = drawPoints[drawPoints.length - 1];
+
+  // Compute snap target in world coords
+  let targetX = snap(mouseWorld.x), targetY = snap(mouseWorld.y);
+  const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y);
+  let snappedToExisting = false;
+  if (nearVid) {
+    const v = maps.vertices.get(nearVid)!;
+    targetX = v.x; targetY = v.y;
+    snappedToExisting = true;
+  }
+
+  // Check close-at-start snap
+  let closingAtStart = false;
+  if (drawPoints.length >= 3) {
+    const dist = Math.hypot(targetX - first.x, targetY - first.y);
+    if (dist < 24 / zoom) {
+      targetX = first.x; targetY = first.y;
+      closingAtStart = true;
     }
   }
 
+  // Semi-transparent polygon fill preview
+  if (drawPoints.length >= 2) {
+    ctx.fillStyle = 'rgba(0, 180, 0, 0.08)';
+    ctx.beginPath();
+    const p0 = w2s(first.x, first.y);
+    ctx.moveTo(p0.x, p0.y);
+    for (let i = 1; i < drawPoints.length; i++) {
+      const p = w2s(drawPoints[i].x, drawPoints[i].y);
+      ctx.lineTo(p.x, p.y);
+    }
+    const pT = w2s(targetX, targetY);
+    ctx.lineTo(pT.x, pT.y);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Solid chain edges
+  ctx.strokeStyle = '#0f0';
+  ctx.lineWidth = 2;
+  for (let i = 0; i < drawPoints.length - 1; i++) {
+    const s1 = w2s(drawPoints[i].x, drawPoints[i].y);
+    const s2 = w2s(drawPoints[i + 1].x, drawPoints[i + 1].y);
+    ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
+  }
+
+  // Dashed preview: last → target
+  const sLast = w2s(last.x, last.y);
+  const sTarget = w2s(targetX, targetY);
   ctx.strokeStyle = '#ff0';
-  ctx.lineWidth   = 1;
+  ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
-  ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(sLast.x, sLast.y); ctx.lineTo(sTarget.x, sTarget.y); ctx.stroke();
+
+  // Dashed preview: target → first (closing edge)
+  if (drawPoints.length >= 2) {
+    const sFirst = w2s(first.x, first.y);
+    ctx.strokeStyle = 'rgba(255, 255, 0, 0.3)';
+    ctx.beginPath(); ctx.moveTo(sTarget.x, sTarget.y); ctx.lineTo(sFirst.x, sFirst.y); ctx.stroke();
+  }
   ctx.setLineDash([]);
+
+  // Chain vertex markers
+  for (let i = 0; i < drawPoints.length; i++) {
+    const s = w2s(drawPoints[i].x, drawPoints[i].y);
+    ctx.fillStyle = i === 0 ? '#0f0' : '#0ff';
+    const sz = i === 0 ? 5 : 3;
+    ctx.fillRect(s.x - sz, s.y - sz, sz * 2, sz * 2);
+  }
+
+  // Snap / close indicators
+  if (closingAtStart) {
+    const sFirst = w2s(first.x, first.y);
+    ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+    ctx.beginPath(); ctx.arc(sFirst.x, sFirst.y, 30, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#0f0';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(sFirst.x, sFirst.y, 30, 0, Math.PI * 2); ctx.stroke();
+  } else if (snappedToExisting) {
+    ctx.strokeStyle = '#0ff';
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(sTarget.x, sTarget.y, 12, 0, Math.PI * 2); ctx.stroke();
+  }
 }

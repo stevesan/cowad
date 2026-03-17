@@ -53,3 +53,24 @@ export function polyArea(poly: Point[]): number {
     a += (poly[j].x + poly[i].x) * (poly[j].y - poly[i].y);
   return Math.abs(a) / 2;
 }
+
+function cross2d(ox: number, oy: number, ax: number, ay: number, bx: number, by: number): number {
+  return (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
+}
+
+/** True if segments AB and CD properly cross (shared endpoints excluded). */
+export function segmentsProperlyIntersect(
+  ax: number, ay: number, bx: number, by: number,
+  cx: number, cy: number, dx: number, dy: number
+): boolean {
+  if ((ax === cx && ay === cy) || (ax === dx && ay === dy) ||
+      (bx === cx && by === cy) || (bx === dx && by === dy)) {
+    return false;
+  }
+  const d1 = cross2d(cx, cy, dx, dy, ax, ay);
+  const d2 = cross2d(cx, cy, dx, dy, bx, by);
+  const d3 = cross2d(ax, ay, bx, by, cx, cy);
+  const d4 = cross2d(ax, ay, bx, by, dx, dy);
+  return ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+         ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0));
+}

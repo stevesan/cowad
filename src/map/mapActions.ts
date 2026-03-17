@@ -1,28 +1,13 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, triggerRenderPanel } from '../state/appState';
-import { snap } from '../canvas/transforms';
-import { findEnclosingCycle } from '../geometry/cycleFinder';
-import { showToast } from '../ui/toast';
+import { buildSectorPoly } from '../geometry/cycleFinder';
+import { pointInPoly } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
-import type { Linedef, Sidedef } from '../types';
-
-export function placeVertex(wx: number, wy: number): Promise<string> {
-  const val = { x: snap(wx), y: snap(wy) };
-  const ref = mapRef('vertices').push(val);
-  record(`map/vertices/${ref.key}`, null, val);
-  return ref.then((r: FirebaseRef) => r.key);
-}
-
-export function placeLine(v1id: string, v2id: string): Promise<FirebaseRef> {
-  const val = { v1: v1id, v2: v2id, flags: 1, frontSide: null, backSide: null };
-  const ref = mapRef('linedefs').push(val);
-  record(`map/linedefs/${ref.key}`, null, val);
-  return ref;
-}
+import type { DrawVertex, Linedef } from '../types';
 
 export function placeThing(wx: number, wy: number): void {
   const type = parseInt((document.getElementById('thing-type-sel') as HTMLSelectElement).value, 10);
-  const val = { x: snap(wx), y: snap(wy), angle: 0, type, flags: 7 };
+  const val = { x: wx, y: wy, angle: 0, type, flags: 7 };
   const ref = mapRef('things').push(val);
   record(`map/things/${ref.key}`, null, val);
 }
@@ -77,26 +62,89 @@ export function deleteSelected(): void {
   triggerRenderPanel();
 }
 
-export async function applySectorTool(wx: number, wy: number): Promise<void> {
-  const cycle = findEnclosingCycle(wx, wy);
-  if (!cycle) { showToast('No closed region found.'); return; }
+export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void> {
+  const n = chain.length;
+  if (n < 3) return;
 
-  const secVal = { floor: 0, ceiling: 128, light: 160, special: 0, tag: 0, floorTex: 'FLOOR4_8', ceilTex: 'CEIL3_5' };
-  const secRef = await mapRef('sectors').push(secVal);
-  const sid = secRef.key;
-  record(`map/sectors/${sid}`, null, secVal);
+  beginAction();
 
-  for (let i = 0; i < cycle.length; i++) {
-    const va = cycle[i], vb = cycle[(i + 1) % cycle.length];
-    let matchId: string | null = null;
-    let matchLd: Linedef | null = null;
-    let reversed = false;
+  // 1. Create vertices for new points, reuse existing
+  const vertexIds: string[] = [];
+  for (const pt of chain) {
+    if (pt.existingId) {
+      vertexIds.push(pt.existingId);
+    } else {
+      const val = { x: pt.x, y: pt.y };
+      const ref = mapRef('vertices').push(val);
+      record(`map/vertices/${ref.key}`, null, val);
+      vertexIds.push(ref.key);
+    }
+  }
+
+  // 2. Find or create linedefs for each edge; detect template sector from shared lines
+  let templateSector: Record<string, any> | null = null;
+  const edgeLineIds: string[] = [];
+  const newLdData = new Map<string, any>(); // track locally-created linedefs
+
+  for (let i = 0; i < n; i++) {
+    const va = vertexIds[i], vb = vertexIds[(i + 1) % n];
+    let existingLdId: string | null = null;
+
     maps.linedefs.forEach((ld, lid) => {
-      if (ld.v1 === va && ld.v2 === vb) { matchId = lid; matchLd = ld; reversed = false; }
-      else if (ld.v1 === vb && ld.v2 === va) { matchId = lid; matchLd = ld; reversed = true; }
+      if ((ld.v1 === va && ld.v2 === vb) || (ld.v1 === vb && ld.v2 === va)) {
+        existingLdId = lid;
+      }
     });
-    if (!matchId || !matchLd) continue;
-    const ld = matchLd as Linedef;
+
+    if (existingLdId) {
+      edgeLineIds.push(existingLdId);
+      // Try to copy properties from adjacent sector
+      if (!templateSector) {
+        const ld = maps.linedefs.get(existingLdId)!;
+        const sdId = ld.frontSide || ld.backSide;
+        const sd = sdId ? maps.sidedefs.get(sdId) : null;
+        if (sd?.sector) {
+          const sec = maps.sectors.get(sd.sector);
+          if (sec) templateSector = { ...sec };
+        }
+      }
+    } else {
+      const ldVal = { v1: va, v2: vb, flags: 1 };
+      const ref = mapRef('linedefs').push(ldVal);
+      record(`map/linedefs/${ref.key}`, null, ldVal);
+      edgeLineIds.push(ref.key);
+      newLdData.set(ref.key, ldVal);
+    }
+  }
+
+  // 3. If no shared lines, check enclosing sector
+  if (!templateSector) {
+    let cx = 0, cy = 0;
+    for (const pt of chain) { cx += pt.x; cy += pt.y; }
+    cx /= n; cy /= n;
+    maps.sectors.forEach((sec, sid) => {
+      if (templateSector) return;
+      const poly = buildSectorPoly(sid);
+      if (poly && pointInPoly(cx, cy, poly)) {
+        templateSector = { ...sec };
+      }
+    });
+  }
+
+  // 4. Create sector
+  const secProps = templateSector
+    ? { floor: templateSector.floor, ceiling: templateSector.ceiling, light: templateSector.light, special: templateSector.special || 0, tag: templateSector.tag || 0, floorTex: templateSector.floorTex || 'FLOOR4_8', ceilTex: templateSector.ceilTex || 'CEIL3_5' }
+    : { floor: 0, ceiling: 128, light: 160, special: 0, tag: 0, floorTex: 'FLOOR4_8', ceilTex: 'CEIL3_5' };
+
+  const secRef = await mapRef('sectors').push(secProps);
+  const sid = secRef.key;
+  record(`map/sectors/${sid}`, null, secProps);
+
+  // 5. Create sidedefs and link to linedefs
+  for (let i = 0; i < n; i++) {
+    const ldId = edgeLineIds[i];
+    const ld: Linedef | undefined = maps.linedefs.get(ldId) || newLdData.get(ldId);
+    if (!ld) continue;
 
     let useFront: boolean;
     if (!ld.frontSide) useFront = true;
@@ -107,35 +155,32 @@ export async function applySectorTool(wx: number, wy: number): Promise<void> {
 
     const sdVal = {
       sector: sid, xoff: 0, yoff: 0,
-      upper: 'STARTAN2',
-      mid:   'STARTAN2',
-      lower: 'STARTAN2',
+      upper: 'STARTAN2', mid: becomingTwoSided ? '-' : 'STARTAN2', lower: 'STARTAN2',
     };
     const sdRef = await mapRef('sidedefs').push(sdVal);
     record(`map/sidedefs/${sdRef.key}`, null, sdVal);
 
     const updates: Record<string, any> = useFront ? { frontSide: sdRef.key } : { backSide: sdRef.key };
     if (becomingTwoSided) {
-      updates.flags = (ld.flags ?? 1) | 4 | 1;
+      updates.flags = ((ld.flags ?? 1) | 4) & ~1;
       const existingSdId = useFront ? ld.backSide : ld.frontSide;
       const existingSd = existingSdId ? maps.sidedefs.get(existingSdId) : null;
       if (existingSd) {
-        const sdFix: Record<string, string> = {};
+        const sdFix: Record<string, any> = {};
         if (!existingSd.upper || existingSd.upper === '-') sdFix.upper = 'STARTAN2';
         if (!existingSd.lower || existingSd.lower === '-') sdFix.lower = 'STARTAN2';
-        if (!existingSd.mid   || existingSd.mid   === '-') sdFix.mid   = 'STARTAN2';
-        if (Object.keys(sdFix).length) {
-          record(`map/sidedefs/${existingSdId}`, { ...existingSd }, { ...existingSd, ...sdFix });
-          await mapRef('sidedefs').child(existingSdId!).update(sdFix);
-        }
+        sdFix.mid = '-';
+        record(`map/sidedefs/${existingSdId}`, { ...existingSd }, { ...existingSd, ...sdFix });
+        await mapRef('sidedefs').child(existingSdId!).update(sdFix);
       }
     }
 
-    const ldBefore = maps.linedefs.get(matchId);
-    if (ldBefore) record(`map/linedefs/${matchId}`, { ...ldBefore }, { ...ldBefore, ...updates });
-    await mapRef('linedefs').child(matchId).update(updates);
+    const ldBefore = maps.linedefs.get(ldId) || newLdData.get(ldId);
+    if (ldBefore) record(`map/linedefs/${ldId}`, { ...ldBefore }, { ...ldBefore, ...updates });
+    await mapRef('linedefs').child(ldId).update(updates);
   }
 
   setSelected({ type: 'sector', id: sid });
   triggerRenderPanel();
+  endAction();
 }

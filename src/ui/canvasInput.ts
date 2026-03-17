@@ -1,23 +1,130 @@
 import {
-  maps, tool, selected, hovered, lineStart, lineChain, pan, zoom, isPanning, panStart,
+  maps, tool, selected, hovered, pan, zoom, isPanning, panStart,
   spaceDown, dragState, mouseWorld,
-  setSelected, setHovered, setLineStart, setLineChain, setZoom, setIsPanning, setPanStart,
-  setSpaceDown, setDragState, setMouseWorld, setTool,
+  setSelected, setHovered, setZoom, setIsPanning, setPanStart,
+  setSpaceDown, setDragState, setMouseWorld, setTool, setDrawPoints,
 } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
-import { nearestVertex, nearestLinedef, nearestThing, pointInPoly } from '../geometry/hitTest';
+import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { buildSectorPoly } from '../geometry/cycleFinder';
-import { placeVertex, placeLine, placeThing, applySectorTool, deleteSelected } from '../map/mapActions';
+import { placeThing, deleteSelected, createSectorFromPolygon } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
-import type { ToolType, Selection } from '../types';
+import { showToast } from './toast';
+import type { ToolType, Selection, DrawVertex } from '../types';
 
 function select(type: Selection['type'], id: string): void { setSelected({ type, id }); renderPanel(); }
 
 let dragOrigin: Record<string, any> | null = null;
 let dragOffset = { x: 0, y: 0 };
+
+// ── Draw tool state ──
+let drawChain: DrawVertex[] = [];
+
+function syncDrawPoints(): void {
+  setDrawPoints(drawChain.map(p => ({ x: p.x, y: p.y })));
+}
+
+function resetDraw(): void {
+  drawChain = [];
+  syncDrawPoints();
+}
+
+function validateNewEdge(ax: number, ay: number, bx: number, by: number): boolean {
+  // Check against existing linedefs
+  for (const [, ld] of maps.linedefs) {
+    const v1 = maps.vertices.get(ld.v1);
+    const v2 = maps.vertices.get(ld.v2);
+    if (!v1 || !v2) continue;
+    if (segmentsProperlyIntersect(ax, ay, bx, by, v1.x, v1.y, v2.x, v2.y)) return false;
+  }
+  // Check against chain edges
+  for (let i = 0; i < drawChain.length - 1; i++) {
+    const p1 = drawChain[i], p2 = drawChain[i + 1];
+    if (segmentsProperlyIntersect(ax, ay, bx, by, p1.x, p1.y, p2.x, p2.y)) return false;
+  }
+  return true;
+}
+
+async function completeSector(): Promise<void> {
+  await createSectorFromPolygon(drawChain);
+  resetDraw();
+  draw();
+}
+
+function handleDrawClick(wx: number, wy: number): void {
+  const swx = snap(wx), swy = snap(wy);
+  const existingVid = nearestVertex(wx, wy);
+
+  let clickX: number, clickY: number;
+  let clickExisting: string | null = null;
+
+  if (existingVid) {
+    const v = maps.vertices.get(existingVid)!;
+    clickX = v.x; clickY = v.y;
+    clickExisting = existingVid;
+  } else {
+    clickX = swx; clickY = swy;
+  }
+
+  // ── First click ──
+  if (drawChain.length === 0) {
+    drawChain.push({ x: clickX, y: clickY, existingId: clickExisting });
+    syncDrawPoints();
+    draw();
+    return;
+  }
+
+  const first = drawChain[0];
+  const last = drawChain[drawChain.length - 1];
+
+  // Ignore same position as last
+  if (clickX === last.x && clickY === last.y) return;
+
+  const CLOSE_THRESH = 24 / zoom;
+
+  // ── Close at start (both existing and new first) ──
+  if (drawChain.length >= 3) {
+    const nearFirst = Math.hypot(clickX - first.x, clickY - first.y) < CLOSE_THRESH;
+    const isFirstVert = clickExisting !== null && clickExisting === first.existingId;
+    if (nearFirst || isFirstVert) {
+      if (!validateNewEdge(last.x, last.y, first.x, first.y)) {
+        showToast('Closing edge would intersect'); return;
+      }
+      completeSector();
+      return;
+    }
+  }
+
+  // ── Close at different existing vert (first must be existing) ──
+  if (first.existingId && drawChain.length >= 2 && clickExisting &&
+      !drawChain.some(p => p.existingId === clickExisting)) {
+    // Validate last → click
+    if (!validateNewEdge(last.x, last.y, clickX, clickY)) {
+      showToast('Edge would intersect'); return;
+    }
+    // Validate click → first (closing)
+    if (!validateNewEdge(clickX, clickY, first.x, first.y)) {
+      showToast('Closing edge would intersect'); return;
+    }
+    drawChain.push({ x: clickX, y: clickY, existingId: clickExisting });
+    completeSector();
+    return;
+  }
+
+  // ── Normal add ──
+  if (!validateNewEdge(last.x, last.y, clickX, clickY)) {
+    showToast('Edge would intersect'); return;
+  }
+
+  drawChain.push({ x: clickX, y: clickY, existingId: clickExisting });
+  syncDrawPoints();
+  draw();
+}
+
+// ── Public init ──
 
 export function initCanvasInput(canvas: HTMLCanvasElement): void {
   function getCanvasXY(e: MouseEvent) {
@@ -65,8 +172,8 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         setHovered(h);
         draw();
       }
-    } else if (tool === 'line') {
-      draw();
+    } else if (tool === 'draw') {
+      draw(); // redraw preview
     }
   });
 
@@ -109,68 +216,12 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       }
       draw();
 
-    } else if (tool === 'vertex') {
-      beginAction();
-      placeVertex(wx, wy);
-      endAction();
-
-    } else if (tool === 'line') {
-      // Check for loop closure: clicking near chain start with 3+ vertices
-      const CLOSE_THRESH = 24 / zoom;
-      if (lineStart !== null && lineChain.length >= 3 && lineStart !== lineChain[0]) {
-        const startV = maps.vertices.get(lineChain[0]);
-        if (startV && Math.hypot(wx - startV.x, wy - startV.y) < CLOSE_THRESH) {
-          beginAction();
-          placeLine(lineStart, lineChain[0]);
-          // Compute centroid for sector detection
-          let cx = 0, cy = 0, n = 0;
-          for (const vid of lineChain) {
-            const vtx = maps.vertices.get(vid);
-            if (vtx) { cx += vtx.x; cy += vtx.y; n++; }
-          }
-          if (n > 0) await applySectorTool(cx / n, cy / n);
-          endAction();
-          setLineStart(null);
-          setLineChain([]);
-          draw();
-          return;
-        }
-      }
-
-      const vid = nearestVertex(wx, wy);
-      if (vid !== null) {
-        if (lineStart === null) {
-          setLineStart(vid);
-          setLineChain([vid]);
-        } else {
-          if (vid !== lineStart) {
-            beginAction();
-            placeLine(lineStart, vid);
-            endAction();
-          }
-          setLineStart(vid);
-          setLineChain([...lineChain, vid]);
-        }
-        draw();
-      } else {
-        beginAction();
-        placeVertex(wx, wy).then(newId => {
-          if (lineStart !== null) placeLine(lineStart, newId);
-          setLineStart(newId);
-          setLineChain([...lineChain, newId]);
-          draw();
-          endAction();
-        });
-      }
-
-    } else if (tool === 'sector') {
-      beginAction();
-      await applySectorTool(wx, wy);
-      endAction();
+    } else if (tool === 'draw') {
+      handleDrawClick(wx, wy);
 
     } else if (tool === 'thing') {
       beginAction();
-      placeThing(wx, wy);
+      placeThing(snap(wx), snap(wy));
       endAction();
     }
   });
@@ -206,8 +257,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
 export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
   function doSetTool(t: ToolType): void {
     setTool(t);
-    setLineStart(null);
-    setLineChain([]);
+    resetDraw();
     setHovered(null);
     document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     canvas.style.cursor = (t === 'select') ? 'default' : 'crosshair';
@@ -227,9 +277,9 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     }
 
     if (e.key === ' ')      { setSpaceDown(true); e.preventDefault(); return; }
-    if (e.key === 'Escape') { setLineStart(null); setLineChain([]); draw(); return; }
+    if (e.key === 'Escape') { resetDraw(); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
-    const keyMap: Record<string, ToolType> = { s: 'select', v: 'vertex', l: 'line', e: 'sector', t: 'thing' };
+    const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', t: 'thing' };
     const mapped = keyMap[e.key.toLowerCase()];
     if (mapped) doSetTool(mapped);
   });
