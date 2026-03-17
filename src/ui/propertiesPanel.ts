@@ -2,6 +2,7 @@ import { maps, selected } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { THINGS, FLAG_BITS } from '../config/constants';
 import { deleteSelected } from '../map/mapActions';
+import { beginAction, record, endAction } from '../history/undoRedo';
 
 function esc(s: string | number | null | undefined): string {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -97,6 +98,12 @@ export function renderPanel(): void {
       const val = (el.type === 'number') ? (parseFloat(el.value) || 0)
                 : (el.tagName === 'SELECT') ? (isNaN(Number(el.value)) ? el.value : +el.value)
                 : el.value;
+      const entity = maps[c]?.get(i);
+      if (entity) {
+        beginAction();
+        record(`map/${c}/${i}`, { ...entity }, { ...entity, [f]: val });
+        endAction();
+      }
       mapRef(c).child(i).update({ [f]: val });
     });
   });
@@ -107,6 +114,12 @@ export function renderPanel(): void {
       const bit = parseInt(el.dataset.bit!, 10);
       const cur = (maps[c].get(i) || {})[f] || 0;
       const val = el.checked ? (cur | bit) : (cur & ~bit);
+      const entity = maps[c]?.get(i);
+      if (entity) {
+        beginAction();
+        record(`map/${c}/${i}`, { ...entity }, { ...entity, [f]: val });
+        endAction();
+      }
       mapRef(c).child(i).update({ [f]: val });
     });
   });

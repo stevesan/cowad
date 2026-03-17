@@ -11,9 +11,13 @@ import { buildSectorPoly } from '../geometry/cycleFinder';
 import { placeVertex, placeLine, placeThing, applySectorTool, deleteSelected } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
+import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
 import type { ToolType, Selection } from '../types';
 
 function select(type: Selection['type'], id: string): void { setSelected({ type, id }); renderPanel(); }
+
+let dragOrigin: Record<string, any> | null = null;
+let dragOffset = { x: 0, y: 0 };
 
 export function initCanvasInput(canvas: HTMLCanvasElement): void {
   function getCanvasXY(e: MouseEvent) {
@@ -36,7 +40,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     }
 
     if (dragState) {
-      const wx = snap(mouseWorld.x), wy = snap(mouseWorld.y);
+      const wx = snap(mouseWorld.x + dragOffset.x), wy = snap(mouseWorld.y + dragOffset.y);
       if (dragState.type === 'vertex') mapRef('vertices').child(dragState.id).update({ x: wx, y: wy });
       else if (dragState.type === 'thing') mapRef('things').child(dragState.id).update({ x: wx, y: wy });
       return;
@@ -66,7 +70,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     }
   });
 
-  canvas.addEventListener('mousedown', e => {
+  canvas.addEventListener('mousedown', async e => {
     if (e.button === 1 || (e.button === 0 && spaceDown)) {
       setIsPanning(true);
       setPanStart({ mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y });
@@ -85,9 +89,13 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       if (vid !== null) {
         select('vertex', vid);
         setDragState({ type: 'vertex', id: vid });
+        const v = maps.vertices.get(vid);
+        if (v) { dragOrigin = { ...v }; dragOffset = { x: v.x - wx, y: v.y - wy }; }
       } else if (tid !== null) {
         select('thing', tid);
         setDragState({ type: 'thing', id: tid });
+        const t = maps.things.get(tid);
+        if (t) { dragOrigin = { ...t }; dragOffset = { x: t.x - wx, y: t.y - wy }; }
       } else if (lid !== null) {
         select('linedef', lid);
       } else {
@@ -102,7 +110,9 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       draw();
 
     } else if (tool === 'vertex') {
+      beginAction();
       placeVertex(wx, wy);
+      endAction();
 
     } else if (tool === 'line') {
       // Check for loop closure: clicking near chain start with 3+ vertices
@@ -110,6 +120,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       if (lineStart !== null && lineChain.length >= 3 && lineStart !== lineChain[0]) {
         const startV = maps.vertices.get(lineChain[0]);
         if (startV && Math.hypot(wx - startV.x, wy - startV.y) < CLOSE_THRESH) {
+          beginAction();
           placeLine(lineStart, lineChain[0]);
           // Compute centroid for sector detection
           let cx = 0, cy = 0, n = 0;
@@ -117,7 +128,8 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
             const vtx = maps.vertices.get(vid);
             if (vtx) { cx += vtx.x; cy += vtx.y; n++; }
           }
-          if (n > 0) applySectorTool(cx / n, cy / n);
+          if (n > 0) await applySectorTool(cx / n, cy / n);
+          endAction();
           setLineStart(null);
           setLineChain([]);
           draw();
@@ -131,29 +143,52 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
           setLineStart(vid);
           setLineChain([vid]);
         } else {
-          if (vid !== lineStart) placeLine(lineStart, vid);
+          if (vid !== lineStart) {
+            beginAction();
+            placeLine(lineStart, vid);
+            endAction();
+          }
           setLineStart(vid);
           setLineChain([...lineChain, vid]);
         }
         draw();
       } else {
+        beginAction();
         placeVertex(wx, wy).then(newId => {
           if (lineStart !== null) placeLine(lineStart, newId);
           setLineStart(newId);
           setLineChain([...lineChain, newId]);
           draw();
+          endAction();
         });
       }
 
     } else if (tool === 'sector') {
-      applySectorTool(wx, wy);
+      beginAction();
+      await applySectorTool(wx, wy);
+      endAction();
 
     } else if (tool === 'thing') {
+      beginAction();
       placeThing(wx, wy);
+      endAction();
     }
   });
 
-  canvas.addEventListener('mouseup', () => { setIsPanning(false); setDragState(null); });
+  canvas.addEventListener('mouseup', () => {
+    setIsPanning(false);
+    if (dragState && dragOrigin) {
+      const col = dragState.type === 'vertex' ? 'vertices' : 'things';
+      const current = maps[col].get(dragState.id);
+      if (current && (dragOrigin.x !== current.x || dragOrigin.y !== current.y)) {
+        beginAction();
+        record(`map/${col}/${dragState.id}`, dragOrigin, { ...current });
+        endAction();
+      }
+    }
+    setDragState(null);
+    dragOrigin = null;
+  });
 
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
@@ -181,6 +216,16 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
 
   window.addEventListener('keydown', e => {
     if (['INPUT','SELECT','TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
+
+    // Undo: Ctrl+Z
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+      e.preventDefault(); undo(); return;
+    }
+    // Redo: Ctrl+Y or Ctrl+Shift+Z
+    if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
+      e.preventDefault(); redo(); return;
+    }
+
     if (e.key === ' ')      { setSpaceDown(true); e.preventDefault(); return; }
     if (e.key === 'Escape') { setLineStart(null); setLineChain([]); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }

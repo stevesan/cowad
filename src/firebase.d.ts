@@ -1,6 +1,6 @@
 // Firebase compat SDK loaded via CDN
 interface FirebaseDatabase {
-  ref(path: string): FirebaseRef;
+  ref(path?: string): FirebaseRef;
 }
 
 interface FirebaseRef {
