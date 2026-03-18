@@ -23,6 +23,7 @@ export let hovered: Selection | null = null;
 export let drawPoints: Point[] = [];
 export let multiSelected: Set<string> = new Set();
 export let boxSelectStart: Point | null = null;
+export let snapSize: number = 8;
 
 export function setTool(t: ToolType): void      { tool = t; }
 export function setSelected(s: Selection | null): void { selected = s; }
@@ -36,6 +37,7 @@ export function setHovered(h: Selection | null): void { hovered = h; }
 export function setDrawPoints(v: Point[]): void  { drawPoints = v; }
 export function setMultiSelected(s: Set<string>): void { multiSelected = s; }
 export function setBoxSelectStart(p: Point | null): void { boxSelectStart = p; }
+export function setSnapSize(v: number): void { snapSize = v; }
 
 let _draw = (): void => {};
 let _renderPanel = (): void => {};

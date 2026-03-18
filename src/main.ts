@@ -1,6 +1,6 @@
 import './styles/main.css';
 import './config/firebase';
-import { pan, setCallbacks } from './state/appState';
+import { pan, setCallbacks, setSnapSize } from './state/appState';
 import { initRenderer, draw } from './canvas/renderer';
 import { renderPanel } from './ui/propertiesPanel';
 import { initCanvasInput, initKeyboard } from './ui/canvasInput';
@@ -23,6 +23,10 @@ window.addEventListener('resize', resize);
 initCanvasInput(canvas);
 const doSetTool = initKeyboard(canvas);
 initToolbar(doSetTool);
+
+document.getElementById('snap-size-sel')!.addEventListener('change', e => {
+  setSnapSize(parseInt((e.target as HTMLSelectElement).value, 10));
+});
 
 initSync();
 initPresence();

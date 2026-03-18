@@ -23,7 +23,7 @@ let dragOffset = { x: 0, y: 0 };
 
 // Multi-drag state
 let multiDragOrigins: Map<string, { x: number; y: number }> | null = null;
-let multiDragStartWorld: { x: number; y: number } | null = null;
+let multiDragAnchorId: string | null = null;
 
 // ── Draw tool state ──
 let drawChain: DrawVertex[] = [];
@@ -203,9 +203,14 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       draw(); return;
     }
 
-    if (multiDragOrigins && multiDragStartWorld) {
-      const dx = snap(mouseWorld.x) - snap(multiDragStartWorld.x);
-      const dy = snap(mouseWorld.y) - snap(multiDragStartWorld.y);
+    if (multiDragOrigins && multiDragAnchorId) {
+      const anchorOrig = multiDragOrigins.get(multiDragAnchorId)!;
+      const rawX = anchorOrig.x + (mouseWorld.x - anchorOrig.x) + dragOffset.x;
+      const rawY = anchorOrig.y + (mouseWorld.y - anchorOrig.y) + dragOffset.y;
+      const anchorX = e.altKey ? rawX : snap(rawX);
+      const anchorY = e.altKey ? rawY : snap(rawY);
+      const dx = anchorX - anchorOrig.x;
+      const dy = anchorY - anchorOrig.y;
       for (const [vid, orig] of multiDragOrigins) {
         mapRef('vertices').child(vid).update({ x: orig.x + dx, y: orig.y + dy });
       }
@@ -213,7 +218,8 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     }
 
     if (dragState) {
-      const wx = snap(mouseWorld.x + dragOffset.x), wy = snap(mouseWorld.y + dragOffset.y);
+      const rawX = mouseWorld.x + dragOffset.x, rawY = mouseWorld.y + dragOffset.y;
+      const wx = e.altKey ? rawX : snap(rawX), wy = e.altKey ? rawY : snap(rawY);
       if (dragState.type === 'vertex') mapRef('vertices').child(dragState.id).update({ x: wx, y: wy });
       else if (dragState.type === 'thing') mapRef('things').child(dragState.id).update({ x: wx, y: wy });
       return;
@@ -264,13 +270,15 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       const lid = nearestLinedef(wx, wy);
 
       if (vid !== null && multiSelected.size > 0 && multiSelected.has(vid)) {
-        // Start multi-drag
+        // Start multi-drag — anchor is the clicked vertex
         multiDragOrigins = new Map();
         for (const id of multiSelected) {
           const v = maps.vertices.get(id);
           if (v) multiDragOrigins.set(id, { x: v.x, y: v.y });
         }
-        multiDragStartWorld = { x: wx, y: wy };
+        multiDragAnchorId = vid;
+        const anchorV = maps.vertices.get(vid)!;
+        dragOffset = { x: anchorV.x - wx, y: anchorV.y - wy };
       } else if (vid !== null) {
         setMultiSelected(new Set());
         select('vertex', vid);
@@ -336,10 +344,13 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     }
 
     // Finalize multi-drag
-    if (multiDragOrigins && multiDragStartWorld) {
-      const dx = snap(mouseWorld.x) - snap(multiDragStartWorld.x);
-      const dy = snap(mouseWorld.y) - snap(multiDragStartWorld.y);
-      if (dx !== 0 || dy !== 0) {
+    if (multiDragOrigins && multiDragAnchorId) {
+      let moved = false;
+      for (const [vid, orig] of multiDragOrigins) {
+        const current = maps.vertices.get(vid);
+        if (current && (orig.x !== current.x || orig.y !== current.y)) { moved = true; break; }
+      }
+      if (moved) {
         beginAction();
         for (const [vid, orig] of multiDragOrigins) {
           const current = maps.vertices.get(vid);
@@ -348,7 +359,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         endAction();
       }
       multiDragOrigins = null;
-      multiDragStartWorld = null;
+      multiDragAnchorId = null;
       return;
     }
 
