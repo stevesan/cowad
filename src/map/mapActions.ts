@@ -1,8 +1,9 @@
 import { mapRef } from '../config/firebase';
-import { maps, selected, setSelected, triggerRenderPanel } from '../state/appState';
+import { maps, selected, setSelected, multiSelected, setMultiSelected, triggerRenderPanel, triggerDraw } from '../state/appState';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
 import { pointInPoly } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
+import { showToast } from '../ui/toast';
 import type { DrawVertex, Linedef, Point } from '../types';
 
 export function placeThing(wx: number, wy: number): void {
@@ -68,6 +69,81 @@ export function splitLinedefAtPoint(lid: string, wx: number, wy: number): void {
 
   setSelected({ type: 'vertex', id: midVid });
   triggerRenderPanel();
+}
+
+export function mergeVertices(): void {
+  if (multiSelected.size !== 2) {
+    showToast('Select exactly 2 vertices to merge');
+    return;
+  }
+
+  const [vidA, vidB] = [...multiSelected];
+  const vA = maps.vertices.get(vidA);
+  const vB = maps.vertices.get(vidB);
+  if (!vA || !vB) return;
+
+  // Find the linedef connecting them (they must be adjacent)
+  let connectingLid: string | null = null;
+  maps.linedefs.forEach((ld, lid) => {
+    if ((ld.v1 === vidA && ld.v2 === vidB) || (ld.v1 === vidB && ld.v2 === vidA)) {
+      connectingLid = lid;
+    }
+  });
+  if (!connectingLid) {
+    showToast('Vertices must be connected by a linedef');
+    return;
+  }
+
+  // Safety check: after merging A into B, would any two linedefs share both vertices?
+  // For each linedef A-C (where C != B), check if a linedef B-C already exists
+  const neighborsOfA = new Set<string>();
+  const neighborsOfB = new Set<string>();
+  maps.linedefs.forEach((ld, lid) => {
+    if (lid === connectingLid) return;
+    if (ld.v1 === vidA) neighborsOfA.add(ld.v2);
+    if (ld.v2 === vidA) neighborsOfA.add(ld.v1);
+    if (ld.v1 === vidB) neighborsOfB.add(ld.v2);
+    if (ld.v2 === vidB) neighborsOfB.add(ld.v1);
+  });
+  for (const c of neighborsOfA) {
+    if (c !== vidB && neighborsOfB.has(c)) {
+      showToast('Merge would create duplicate linedefs');
+      return;
+    }
+  }
+
+  beginAction();
+
+  // Move B to midpoint
+  const midX = Math.round((vA.x + vB.x) / 2);
+  const midY = Math.round((vA.y + vB.y) / 2);
+  record(`map/vertices/${vidB}`, { ...vB }, { x: midX, y: midY });
+  mapRef('vertices').child(vidB).update({ x: midX, y: midY });
+
+  // Delete the connecting linedef (and its sidedefs)
+  deleteLinedef(connectingLid);
+
+  // Rewrite all linedefs referencing A to reference B
+  maps.linedefs.forEach((ld, lid) => {
+    const updates: Record<string, any> = {};
+    if (ld.v1 === vidA) updates.v1 = vidB;
+    if (ld.v2 === vidA) updates.v2 = vidB;
+    if (Object.keys(updates).length) {
+      record(`map/linedefs/${lid}`, { ...ld }, { ...ld, ...updates });
+      mapRef('linedefs').child(lid).update(updates);
+    }
+  });
+
+  // Delete vertex A
+  record(`map/vertices/${vidA}`, { ...vA }, null);
+  mapRef('vertices').child(vidA).remove();
+
+  endAction();
+
+  setMultiSelected(new Set([vidB]));
+  setSelected({ type: 'vertex', id: vidB });
+  triggerRenderPanel();
+  triggerDraw();
 }
 
 export function deleteLinedef(lid: string): void {

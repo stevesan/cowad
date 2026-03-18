@@ -9,7 +9,7 @@ import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
 import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
-import { placeThing, deleteSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint } from '../map/mapActions';
+import { placeThing, deleteSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint, mergeVertices } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
@@ -423,6 +423,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     if (e.key === ' ')      { setSpaceDown(true); e.preventDefault(); return; }
     if (e.key === 'Escape') { resetDraw(); setMultiSelected(new Set()); setBoxSelectStart(null); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
+    if (e.key.toLowerCase() === 'm' && tool === 'select') { mergeVertices(); return; }
     const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', t: 'thing' };
     const mapped = keyMap[e.key.toLowerCase()];
     if (mapped) doSetTool(mapped);
