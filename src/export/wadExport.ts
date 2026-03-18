@@ -18,7 +18,7 @@ interface Seg {
   offset: number;
 }
 
-export function exportWAD(): void {
+function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   function str8(s: string | null | undefined): Uint8Array {
     const buf = new Uint8Array(8);
     const str = (s == null || s === '') ? '-' : String(s);
@@ -272,6 +272,18 @@ export function exportWAD(): void {
 
   console.table(entries.map(e => ({ lump: e.name, offset: e.off, size: e.size })));
 
+  let msg = `MAP01: ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t`;
+  const skipped = skippedLd + skippedSd + skippedSec;
+  if (skipped) msg += ` (${skipped} orphans skipped)`;
+
+  return { wad, msg };
+}
+
+export function exportWAD(): void {
+  const result = buildWAD();
+  if (!result) return;
+  const { wad, msg } = result;
+
   const blob = new Blob([wad], { type: 'application/octet-stream' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -279,8 +291,28 @@ export function exportWAD(): void {
   a.click();
   URL.revokeObjectURL(a.href);
 
-  let msg = `MAP01: ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t`;
-  const skipped = skippedLd + skippedSd + skippedSec;
-  if (skipped) msg += ` (${skipped} orphans skipped)`;
   showToast(msg);
+}
+
+const LAUNCHER_URL = 'http://127.0.0.1:3666';
+
+export async function launchWAD(): Promise<void> {
+  const result = buildWAD();
+  if (!result) return;
+  const { wad, msg } = result;
+
+  try {
+    const res = await fetch(`${LAUNCHER_URL}/launch`, {
+      method: 'POST',
+      body: new Uint8Array(wad),
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast(`Launched (${data.game}) — ${msg}`);
+    } else {
+      showToast(`Launch error: ${data.error}`);
+    }
+  } catch {
+    showToast('Launcher not running — start launcher/server.js');
+  }
 }

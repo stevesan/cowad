@@ -5,3 +5,5 @@ dist/
 .env
 .env.local
 .env.*.local
+launcher/config.json
+launcher/temp_play.wad

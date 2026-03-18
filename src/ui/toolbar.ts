@@ -1,7 +1,7 @@
 import { db } from '../config/firebase';
 import { setSelected } from '../state/appState';
 import { cleanupMap } from '../map/mapCleanup';
-import { exportWAD } from '../export/wadExport';
+import { exportWAD, launchWAD } from '../export/wadExport';
 import { renderPanel } from './propertiesPanel';
 import type { ToolType } from '../types';
 
@@ -12,6 +12,7 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
 
   document.getElementById('clean-btn')!.addEventListener('click', cleanupMap);
   document.getElementById('wad-btn')!.addEventListener('click', exportWAD);
+  document.getElementById('play-btn')!.addEventListener('click', launchWAD);
 
   document.getElementById('clear-btn')!.addEventListener('click', () => {
     if (!confirm('Clear the entire map? This cannot be undone.')) return;
