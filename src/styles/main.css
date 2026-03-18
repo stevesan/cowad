@@ -36,7 +36,7 @@ canvas { display: block; width: 100%; height: 100%; }
 .prop-row label { color: #666; font-size: 11px; width: 72px; flex-shrink: 0; }
 .prop-row input[type=number],
 .prop-row input[type=text],
-.prop-row select { flex: 1; background: #1e1e1e; border: 1px solid #333; color: #ccc;
+.prop-row select { flex: 1; min-width: 0; background: #1e1e1e; border: 1px solid #333; color: #ccc;
                    padding: 2px 5px; font-size: 11px; font-family: monospace; border-radius: 2px; }
 .prop-row input[type=checkbox] { accent-color: #c00; }
 .prop-section { border-top: 1px solid #222; padding-top: 6px; margin-top: 6px; }
@@ -52,3 +52,38 @@ canvas { display: block; width: 100%; height: 100%; }
          border-radius: 4px; font-size: 12px; pointer-events: none; opacity: 0;
          transition: opacity 0.2s; z-index: 100; }
 #toast.show { opacity: 1; }
+
+/* ── Texture Browser Modal ── */
+.tex-modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200;
+                     display: flex; align-items: center; justify-content: center; }
+.tex-modal-content { background: #1a1a1a; border: 1px solid #444; border-radius: 6px;
+                     width: 80vw; max-width: 900px; height: 75vh; display: flex; flex-direction: column; }
+.tex-modal-header { display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+                    border-bottom: 1px solid #333; flex-shrink: 0; }
+#tex-search { flex: 1; background: #111; border: 1px solid #333; color: #ccc; padding: 4px 8px;
+              font-size: 12px; font-family: monospace; border-radius: 3px; outline: none; }
+#tex-search:focus { border-color: #666; }
+.tex-tabs { display: flex; gap: 2px; }
+.tex-tab { background: #222; border: 1px solid #444; color: #888; padding: 3px 10px;
+           cursor: pointer; font-size: 11px; font-family: monospace; border-radius: 3px; }
+.tex-tab.active { background: #900; color: #fff; border-color: #c00; }
+.tex-tab:hover:not(.active) { background: #333; color: #ccc; }
+.tex-modal-close { background: none; border: none; color: #666; font-size: 20px; cursor: pointer;
+                   padding: 0 4px; line-height: 1; }
+.tex-modal-close:hover { color: #fff; }
+.tex-grid { flex: 1; overflow-y: auto; padding: 8px;
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+            gap: 6px; align-content: start; }
+.tex-card { display: flex; flex-direction: column; align-items: center; padding: 4px;
+            border: 1px solid #333; border-radius: 3px; cursor: pointer; background: #111; }
+.tex-card:hover { border-color: #888; background: #1e1e1e; }
+.tex-card.selected { border-color: #ff0; background: #2a2a10; }
+.tex-card img { display: block; background: #000; }
+.tex-card-name { font-size: 9px; color: #888; margin-top: 3px; text-align: center;
+                 overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
+
+/* ── Texture field extras ── */
+.tex-browse-btn { background: #2a2a2a; border: 1px solid #444; color: #888; padding: 1px 5px;
+                  cursor: pointer; font-size: 11px; font-family: monospace; border-radius: 2px; flex-shrink: 0; }
+.tex-browse-btn:hover { background: #3a3a3a; color: #fff; }
+.tex-preview { flex-shrink: 0; border: 1px solid #333; image-rendering: pixelated; }

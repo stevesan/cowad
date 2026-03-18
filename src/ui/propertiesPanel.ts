@@ -3,6 +3,8 @@ import { mapRef } from '../config/firebase';
 import { THINGS, FLAG_BITS } from '../config/constants';
 import { deleteSelected } from '../map/mapActions';
 import { beginAction, record, endAction } from '../history/undoRedo';
+import { getTextureDataUrl, isWadLoaded } from '../wad/textureLoader';
+import { openTextureBrowser } from './textureBrowser';
 
 function esc(s: string | number | null | undefined): string {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -32,6 +34,16 @@ export function renderPanel(): void {
     return `<div class="prop-row"><label>${label}</label>
       <input type="text" data-path="${path}" value="${esc(val ?? '')}"></div>`;
   }
+  function texField(label: string, path: string, val: string | undefined, texType: 'flat' | 'wall'): string {
+    const v = val ?? '';
+    const preview = isWadLoaded() && getTextureDataUrl(v)
+      ? `<img class="tex-preview" src="${getTextureDataUrl(v)}" width="24" height="24">`
+      : '';
+    return `<div class="prop-row"><label>${label}</label>
+      ${preview}
+      <input type="text" data-path="${path}" value="${esc(v)}">
+      <button class="tex-browse-btn" data-path="${path}" data-tex-type="${texType}">...</button></div>`;
+  }
   function chkField(label: string, bitmaskPath: string, bit: number, flags: number): string {
     const checked = (flags & bit) ? 'checked' : '';
     return `<div class="prop-row"><label>${label}</label>
@@ -46,9 +58,9 @@ export function renderPanel(): void {
       ${txtField('Sector', p('sector'), sd.sector ?? '')}
       ${numField('X Off',  p('xoff'),  sd.xoff)}
       ${numField('Y Off',  p('yoff'),  sd.yoff)}
-      ${txtField('Upper',  p('upper'), sd.upper)}
-      ${txtField('Mid',    p('mid'),   sd.mid)}
-      ${txtField('Lower',  p('lower'), sd.lower)}
+      ${texField('Upper',  p('upper'), sd.upper, 'wall')}
+      ${texField('Mid',    p('mid'),   sd.mid, 'wall')}
+      ${texField('Lower',  p('lower'), sd.lower, 'wall')}
     </div>`;
   }
 
@@ -71,8 +83,8 @@ export function renderPanel(): void {
     const p = (f: string) => `sectors/${id}/${f}`;
     html += numField('Floor H',   p('floor'),    entity.floor)
           + numField('Ceil H',    p('ceiling'),  entity.ceiling)
-          + txtField('Floor Tex', p('floorTex'), entity.floorTex || 'FLOOR4_8')
-          + txtField('Ceil Tex',  p('ceilTex'),  entity.ceilTex  || 'CEIL3_5')
+          + texField('Floor Tex', p('floorTex'), entity.floorTex || 'FLOOR4_8', 'flat')
+          + texField('Ceil Tex',  p('ceilTex'),  entity.ceilTex  || 'CEIL3_5', 'flat')
           + numField('Light',     p('light'),    entity.light)
           + numField('Special',   p('special'),  entity.special)
           + numField('Tag',       p('tag'),      entity.tag);
@@ -121,6 +133,23 @@ export function renderPanel(): void {
         endAction();
       }
       mapRef(c).child(i).update({ [f]: val });
+    });
+  });
+
+  pContent.querySelectorAll<HTMLButtonElement>('.tex-browse-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const path = btn.dataset.path!;
+      const texType = btn.dataset.texType as 'flat' | 'wall';
+      const input = pContent.querySelector<HTMLInputElement>(`[data-path="${path}"]`)!;
+      openTextureBrowser({
+        filter: texType,
+        currentValue: input.value,
+        onSelect: (name) => {
+          input.value = name;
+          input.dispatchEvent(new Event('change'));
+          renderPanel(); // refresh preview
+        },
+      });
     });
   });
 
