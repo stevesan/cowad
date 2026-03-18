@@ -7,7 +7,7 @@ I'm releasing this as GPL because I assume much of the training data that makes 
 ## Setup
 
 1. Install dependencies: `npm install`
-2. Copy `.env.example` to `.env` and fill in your Firebase project values
+2. Copy `.env.example` to `.env.local` and fill in your Firebase project values
 3. Start the dev server: `npm run dev`
 
 ## Playtesting with the Launcher
