@@ -1,4 +1,5 @@
 import { parseWad, getLump, getLumpsBetween, type WadFile } from './wadReader';
+import { db } from '../config/firebase';
 
 export interface TextureEntry {
   name: string;
@@ -282,5 +283,35 @@ export async function importWad(file: File): Promise<{ flats: number; walls: num
   for (const t of flats) textures.set(t.name, t);
   for (const t of walls) textures.set(t.name, t);
 
+  // Persist to Firebase (replace any previous IWAD)
+  await saveTexturesToDb();
+
   return { flats: flats.length, walls: walls.length };
+}
+
+// ── Firebase persistence ──
+
+async function saveTexturesToDb(): Promise<void> {
+  const obj: Record<string, { name: string; type: string; width: number; height: number; dataUrl: string }> = {};
+  textures.forEach((t, key) => {
+    obj[key] = { name: t.name, type: t.type, width: t.width, height: t.height, dataUrl: t.dataUrl };
+  });
+  await db.ref('textures').set(obj);
+}
+
+export async function loadTexturesFromDb(): Promise<void> {
+  const snap = await db.ref('textures').once('value');
+  const val = snap.val();
+  if (!val) return;
+  textures = new Map();
+  for (const key of Object.keys(val)) {
+    const t = val[key];
+    textures.set(key, {
+      name: t.name,
+      type: t.type as 'flat' | 'wall',
+      width: t.width,
+      height: t.height,
+      dataUrl: t.dataUrl,
+    });
+  }
 }

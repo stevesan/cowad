@@ -5,6 +5,7 @@ interface FirebaseDatabase {
 
 interface FirebaseRef {
   on(event: string, callback: (snapshot: FirebaseSnapshot) => void): void;
+  once(event: string): Promise<FirebaseSnapshot>;
   set(value: any): Promise<void>;
   push(value?: any): Promise<FirebaseRef> & { key: string };
   update(value: any): Promise<void>;

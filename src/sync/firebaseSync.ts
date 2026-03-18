@@ -1,5 +1,6 @@
 import { db, mapRef } from '../config/firebase';
 import { uid, maps, selected, setSelected, setSnapSize, triggerDraw, triggerRenderPanel } from '../state/appState';
+import { loadTexturesFromDb } from '../wad/textureLoader';
 import type { MapCollection } from '../types';
 
 function colToType(col: string): string { return col.replace(/s$/, ''); }
@@ -32,6 +33,9 @@ export function initSync(): void {
       if (sel) sel.value = String(val);
     }
   });
+
+  // Load persisted IWAD textures
+  loadTexturesFromDb();
 }
 
 export function initPresence(): void {
