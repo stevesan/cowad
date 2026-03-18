@@ -41,11 +41,13 @@ export function setSnapSize(v: number): void { snapSize = v; }
 
 let _draw = (): void => {};
 let _renderPanel = (): void => {};
+let _rebuild3D = (): void => {};
 
-export function setCallbacks(cbs: { draw: () => void; renderPanel: () => void }): void {
+export function setCallbacks(cbs: { draw: () => void; renderPanel: () => void; rebuild3D?: () => void }): void {
   _draw = cbs.draw;
   _renderPanel = cbs.renderPanel;
+  if (cbs.rebuild3D) _rebuild3D = cbs.rebuild3D;
 }
 
-export function triggerDraw(): void { _draw(); }
+export function triggerDraw(): void { _draw(); _rebuild3D(); }
 export function triggerRenderPanel(): void { _renderPanel(); }

@@ -80,10 +80,11 @@ function ensureInit(): void {
     pitch = Math.max(-Math.PI * 0.47, Math.min(Math.PI * 0.47, pitch));
   });
 
-  // Selection via right-click (when pointer locked, right-click selects)
   renderer.domElement.addEventListener('contextmenu', (e: Event) => e.preventDefault());
   renderer.domElement.addEventListener('mousedown', (e: MouseEvent) => {
-    if (e.button === 2 && pointerLocked) {
+    if (!pointerLocked) return;
+
+    if (e.button === 0 || e.button === 2) {
       // Raycast from center of screen
       mouse.set(0, 0);
       raycaster.setFromCamera(mouse, camera);
@@ -94,6 +95,10 @@ function ensureInit(): void {
           setSelected({ type: ud.entityType === 'linedef' ? 'linedef' : 'sector', id: ud.entityId });
           renderPanel();
         }
+      }
+      // Left-click: also exit pointer lock so user can edit properties
+      if (e.button === 0) {
+        document.exitPointerLock();
       }
     }
   });
@@ -223,7 +228,8 @@ export function toggle3D(): void {
     positionCamera();
     lastTime = performance.now();
     animFrameId = requestAnimationFrame(animate);
-    showToast('Click to look | WASD move | Space/Ctrl up/down | Shift fast | Right-click select | 3 to exit');
+    renderer!.domElement.requestPointerLock();
+    showToast('Left-click select | WASD move | Space/Ctrl up/down | Shift fast | 3 to exit');
   } else {
     container!.style.display = 'none';
     canvas2d.style.display = '';
@@ -238,6 +244,11 @@ export function toggle3D(): void {
 
 export function is3DActive(): boolean { return isActive; }
 
+let rebuildTimer = 0;
+
 export function rebuild3D(): void {
-  if (isActive) rebuildScene();
+  if (!isActive) return;
+  // Debounce: batch rapid updates into a single rebuild
+  clearTimeout(rebuildTimer);
+  rebuildTimer = window.setTimeout(rebuildScene, 100);
 }

@@ -7,8 +7,9 @@ import { renderPanel } from './ui/propertiesPanel';
 import { initCanvasInput, initKeyboard } from './ui/canvasInput';
 import { initToolbar } from './ui/toolbar';
 import { initSync, initPresence } from './sync/firebaseSync';
+import { rebuild3D } from './3d/view3d';
 
-setCallbacks({ draw, renderPanel });
+setCallbacks({ draw, renderPanel, rebuild3D });
 
 const canvas = document.getElementById('canvas') as HTMLCanvasElement;
 initRenderer(canvas);
