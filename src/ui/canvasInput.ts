@@ -14,6 +14,7 @@ import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
 import { showToast } from './toast';
+import { toggle3D, is3DActive } from '../3d/view3d';
 import type { ToolType, Selection, DrawVertex } from '../types';
 
 function select(type: Selection['type'], id: string): void { setSelected({ type, id }); renderPanel(); }
@@ -426,9 +427,16 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     if (e.key === 'Escape') { resetDraw(); setMultiSelected(new Set()); setBoxSelectStart(null); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
     if (e.key.toLowerCase() === 'm' && tool === 'select') { mergeVertices(); return; }
-    const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', t: 'thing' };
-    const mapped = keyMap[e.key.toLowerCase()];
-    if (mapped) doSetTool(mapped);
+    if (e.key === '3') {
+      toggle3D();
+      document.getElementById('view3d-btn')?.classList.toggle('active', is3DActive());
+      return;
+    }
+    if (!is3DActive()) {
+      const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', t: 'thing' };
+      const mapped = keyMap[e.key.toLowerCase()];
+      if (mapped) doSetTool(mapped);
+    }
   });
   window.addEventListener('keyup', e => { if (e.key === ' ') setSpaceDown(false); });
 

@@ -3,6 +3,7 @@ import { setSelected } from '../state/appState';
 import { cleanupMap } from '../map/mapCleanup';
 import { exportWAD, launchWAD } from '../export/wadExport';
 import { importWad } from '../wad/textureLoader';
+import { toggle3D, is3DActive } from '../3d/view3d';
 import { showToast } from './toast';
 import { renderPanel } from './propertiesPanel';
 import type { ToolType } from '../types';
@@ -29,6 +30,11 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
       }
     });
     input.click();
+  });
+
+  document.getElementById('view3d-btn')!.addEventListener('click', () => {
+    toggle3D();
+    document.getElementById('view3d-btn')!.classList.toggle('active', is3DActive());
   });
 
   document.getElementById('clean-btn')!.addEventListener('click', cleanupMap);

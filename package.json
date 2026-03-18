@@ -10,7 +10,11 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
+    "@types/three": "^0.183.1",
     "typescript": "^5.9.3",
     "vite": "^6.0.0"
+  },
+  "dependencies": {
+    "three": "^0.183.2"
   }
 }
