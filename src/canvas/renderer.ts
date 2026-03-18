@@ -60,10 +60,10 @@ function drawSectors(): void {
     const light = Math.max(0, Math.min(255, sec.light ?? 160));
     const c = Math.round(20 + (light / 255) * 70);
     ctx.fillStyle = isSel
-      ? `rgb(${c + 40},${c + 30},${Math.round(c * 0.4)})`
+      ? `rgba(${c + 40},${c + 30},${Math.round(c * 0.4)},0.7)`
       : isHov
-      ? `rgb(${c + 20},${c + 20},${Math.round(c * 0.75) + 15})`
-      : `rgb(${c},${c},${Math.round(c * 0.75)})`;
+      ? `rgba(${c + 20},${c + 20},${Math.round(c * 0.75) + 15},0.7)`
+      : `rgba(${c},${c},${Math.round(c * 0.75)},0.6)`;
     ctx.beginPath();
     for (const poly of loops) {
       const p0 = w2s(poly[0].x, poly[0].y);
