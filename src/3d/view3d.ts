@@ -1,9 +1,11 @@
 import * as THREE from 'three';
-import { maps, setSelected } from '../state/appState';
+import { maps, mouseWorld, setSelected } from '../state/appState';
 import { renderPanel } from '../ui/propertiesPanel';
 import { draw } from '../canvas/renderer';
 import { showToast } from '../ui/toast';
 import { buildFloorsCeilings, buildWalls, clearTexCache } from './buildGeometry';
+import { buildSectorPolys } from '../geometry/cycleFinder';
+import { pointInPoly } from '../geometry/hitTest';
 
 let renderer: THREE.WebGLRenderer | null = null;
 let scene: THREE.Scene;
@@ -142,36 +144,30 @@ function rebuildScene(): void {
 
 // ── Camera positioning ──
 
-function positionCamera(): void {
-  // Try to find Player 1 start
-  let startX = 0, startY = 0, startAngle = 90;
-  let found = false;
-  maps.things.forEach(th => {
-    if (!found && th.type === 1) {
-      startX = th.x;
-      startY = th.y;
-      startAngle = th.angle ?? 90;
-      found = true;
+const PLAYER_VIEW_HEIGHT = 41; // DOOM player eye height
+
+function floorHeightAt(wx: number, wy: number): number {
+  let floorH = 0;
+  maps.sectors.forEach((sec, sid) => {
+    const loops = buildSectorPolys(sid);
+    for (const poly of loops) {
+      if (poly.length >= 3 && pointInPoly(wx, wy, poly)) {
+        floorH = sec.floor ?? 0;
+        return;
+      }
     }
   });
+  return floorH;
+}
 
-  if (!found) {
-    // Center on map
-    let cx = 0, cy = 0, n = 0;
-    maps.vertices.forEach(v => { cx += v.x; cy += v.y; n++; });
-    if (n) { startX = cx / n; startY = cy / n; }
-  }
-
-  // Find floor height at start position
-  let floorH = 0;
-  maps.sectors.forEach(sec => {
-    // Simple: use any sector floor as default
-    floorH = sec.floor ?? 0;
-  });
+function positionCamera(): void {
+  const startX = mouseWorld.x;
+  const startY = mouseWorld.y;
+  const floorH = floorHeightAt(startX, startY);
 
   // DOOM coords → Three coords: (doomX, height, -doomY)
-  camera.position.set(startX, floorH + 48, -startY);
-  yaw = ((startAngle - 90) * Math.PI) / 180; // DOOM angle to yaw
+  camera.position.set(startX, floorH + PLAYER_VIEW_HEIGHT, -startY);
+  yaw = 0;
   pitch = 0;
 }
 
