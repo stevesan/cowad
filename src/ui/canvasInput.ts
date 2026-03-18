@@ -24,6 +24,7 @@ let dragOffset = { x: 0, y: 0 };
 // Multi-drag state
 let multiDragOrigins: Map<string, { x: number; y: number }> | null = null;
 let multiDragAnchorId: string | null = null;
+let boxSelectAdditive = false;
 
 // ── Draw tool state ──
 let drawChain: DrawVertex[] = [];
@@ -303,7 +304,8 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         select('linedef', lid);
       } else {
         // Start box select (works on empty space and over sectors)
-        setMultiSelected(new Set());
+        boxSelectAdditive = e.ctrlKey;
+        if (!boxSelectAdditive) setMultiSelected(new Set());
         setSelected(null); renderPanel();
         setBoxSelectStart({ x: wx, y: wy });
       }
@@ -340,7 +342,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       } else {
         const minX = Math.min(start.x, end.x), maxX = Math.max(start.x, end.x);
         const minY = Math.min(start.y, end.y), maxY = Math.max(start.y, end.y);
-        const sel = new Set<string>();
+        const sel = boxSelectAdditive ? new Set(multiSelected) : new Set<string>();
         maps.vertices.forEach((v, vid) => {
           if (v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY) sel.add(vid);
         });
