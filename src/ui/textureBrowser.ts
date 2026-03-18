@@ -50,13 +50,14 @@ function getModal(): HTMLElement {
       });
     });
 
-    // Escape key
-    window.addEventListener('keydown', e => {
-      if (e.key === 'Escape' && modal!.style.display !== 'none') {
+    // Stop all key events from reaching canvas/3D handlers
+    modal.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
         closeTextureBrowser();
-        e.stopPropagation();
       }
+      e.stopPropagation();
     });
+    modal.addEventListener('keyup', e => e.stopPropagation());
   }
   return modal;
 }
