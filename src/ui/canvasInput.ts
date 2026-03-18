@@ -1,8 +1,9 @@
 import {
   maps, tool, selected, hovered, pan, zoom, isPanning, panStart,
-  spaceDown, dragState, mouseWorld,
+  spaceDown, dragState, mouseWorld, multiSelected, boxSelectStart,
   setSelected, setHovered, setZoom, setIsPanning, setPanStart,
   setSpaceDown, setDragState, setMouseWorld, setTool, setDrawPoints,
+  setMultiSelected, setBoxSelectStart,
 } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
@@ -19,6 +20,10 @@ function select(type: Selection['type'], id: string): void { setSelected({ type,
 
 let dragOrigin: Record<string, any> | null = null;
 let dragOffset = { x: 0, y: 0 };
+
+// Multi-drag state
+let multiDragOrigins: Map<string, { x: number; y: number }> | null = null;
+let multiDragStartWorld: { x: number; y: number } | null = null;
 
 // ── Draw tool state ──
 let drawChain: DrawVertex[] = [];
@@ -198,11 +203,24 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       draw(); return;
     }
 
+    if (multiDragOrigins && multiDragStartWorld) {
+      const dx = snap(mouseWorld.x) - snap(multiDragStartWorld.x);
+      const dy = snap(mouseWorld.y) - snap(multiDragStartWorld.y);
+      for (const [vid, orig] of multiDragOrigins) {
+        mapRef('vertices').child(vid).update({ x: orig.x + dx, y: orig.y + dy });
+      }
+      return;
+    }
+
     if (dragState) {
       const wx = snap(mouseWorld.x + dragOffset.x), wy = snap(mouseWorld.y + dragOffset.y);
       if (dragState.type === 'vertex') mapRef('vertices').child(dragState.id).update({ x: wx, y: wy });
       else if (dragState.type === 'thing') mapRef('things').child(dragState.id).update({ x: wx, y: wy });
       return;
+    }
+
+    if (boxSelectStart) {
+      draw(); return;
     }
 
     if (tool === 'select') {
@@ -245,26 +263,34 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       const tid = nearestThing(wx, wy);
       const lid = nearestLinedef(wx, wy);
 
-      if (vid !== null) {
+      if (vid !== null && multiSelected.size > 0 && multiSelected.has(vid)) {
+        // Start multi-drag
+        multiDragOrigins = new Map();
+        for (const id of multiSelected) {
+          const v = maps.vertices.get(id);
+          if (v) multiDragOrigins.set(id, { x: v.x, y: v.y });
+        }
+        multiDragStartWorld = { x: wx, y: wy };
+      } else if (vid !== null) {
+        setMultiSelected(new Set());
         select('vertex', vid);
         setDragState({ type: 'vertex', id: vid });
         const v = maps.vertices.get(vid);
         if (v) { dragOrigin = { ...v }; dragOffset = { x: v.x - wx, y: v.y - wy }; }
       } else if (tid !== null) {
+        setMultiSelected(new Set());
         select('thing', tid);
         setDragState({ type: 'thing', id: tid });
         const t = maps.things.get(tid);
         if (t) { dragOrigin = { ...t }; dragOffset = { x: t.x - wx, y: t.y - wy }; }
       } else if (lid !== null) {
+        setMultiSelected(new Set());
         select('linedef', lid);
       } else {
-        let found: string | null = null;
-        maps.sectors.forEach((_, sid) => {
-          const poly = buildSectorPoly(sid);
-          if (poly && pointInPoly(wx, wy, poly)) found = sid;
-        });
-        if (found) select('sector', found);
-        else { setSelected(null); renderPanel(); }
+        // Start box select (works on empty space and over sectors)
+        setMultiSelected(new Set());
+        setSelected(null); renderPanel();
+        setBoxSelectStart({ x: wx, y: wy });
       }
       draw();
 
@@ -280,6 +306,52 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
 
   canvas.addEventListener('mouseup', () => {
     setIsPanning(false);
+
+    // Finalize box select
+    if (boxSelectStart) {
+      const start = boxSelectStart;
+      const end = mouseWorld;
+      const dx = Math.abs(end.x - start.x), dy = Math.abs(end.y - start.y);
+      const clickThresh = 4 / zoom;
+      setBoxSelectStart(null);
+      if (dx < clickThresh && dy < clickThresh) {
+        // Tiny drag = click — try sector selection
+        let found: string | null = null;
+        maps.sectors.forEach((_, sid) => {
+          const poly = buildSectorPoly(sid);
+          if (poly && pointInPoly(start.x, start.y, poly)) found = sid;
+        });
+        if (found) select('sector', found);
+      } else {
+        const minX = Math.min(start.x, end.x), maxX = Math.max(start.x, end.x);
+        const minY = Math.min(start.y, end.y), maxY = Math.max(start.y, end.y);
+        const sel = new Set<string>();
+        maps.vertices.forEach((v, vid) => {
+          if (v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY) sel.add(vid);
+        });
+        setMultiSelected(sel);
+      }
+      draw();
+      return;
+    }
+
+    // Finalize multi-drag
+    if (multiDragOrigins && multiDragStartWorld) {
+      const dx = snap(mouseWorld.x) - snap(multiDragStartWorld.x);
+      const dy = snap(mouseWorld.y) - snap(multiDragStartWorld.y);
+      if (dx !== 0 || dy !== 0) {
+        beginAction();
+        for (const [vid, orig] of multiDragOrigins) {
+          const current = maps.vertices.get(vid);
+          if (current) record(`map/vertices/${vid}`, { ...orig }, { ...current });
+        }
+        endAction();
+      }
+      multiDragOrigins = null;
+      multiDragStartWorld = null;
+      return;
+    }
+
     if (dragState && dragOrigin) {
       const col = dragState.type === 'vertex' ? 'vertices' : 'things';
       const current = maps[col].get(dragState.id);
@@ -311,6 +383,8 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     setTool(t);
     resetDraw();
     setHovered(null);
+    setMultiSelected(new Set());
+    setBoxSelectStart(null);
     document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
     canvas.style.cursor = (t === 'select') ? 'default' : 'crosshair';
     draw();
@@ -329,7 +403,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     }
 
     if (e.key === ' ')      { setSpaceDown(true); e.preventDefault(); return; }
-    if (e.key === 'Escape') { resetDraw(); draw(); return; }
+    if (e.key === 'Escape') { resetDraw(); setMultiSelected(new Set()); setBoxSelectStart(null); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelected(); return; }
     const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', t: 'thing' };
     const mapped = keyMap[e.key.toLowerCase()];

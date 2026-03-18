@@ -1,4 +1,4 @@
-import { maps, selected, hovered, tool, mouseWorld, zoom, drawPoints } from '../state/appState';
+import { maps, selected, hovered, tool, mouseWorld, zoom, drawPoints, multiSelected, boxSelectStart } from '../state/appState';
 import { GRID, THINGS, CAT_COLOR } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
 import { buildSectorPoly, buildSectorPolys } from '../geometry/cycleFinder';
@@ -26,6 +26,7 @@ export function draw(): void {
   drawVertices();
   drawThings();
   drawPolygonPreview();
+  drawBoxSelect();
 }
 
 function drawGrid(W: number, H: number): void {
@@ -114,14 +115,15 @@ function drawVertices(): void {
   maps.vertices.forEach((v, vid) => {
     const s     = w2s(v.x, v.y);
     const isSel = selected && selected.type === 'vertex' && selected.id === vid;
+    const isMultiSel = multiSelected.has(vid);
     const isHov = hovered  && hovered.type  === 'vertex' && hovered.id  === vid;
-    if (isHov && !isSel) {
+    if (isHov && !isSel && !isMultiSel) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.fillStyle = isSel ? '#ff0' : isHov ? '#fff' : '#0ff';
-    const sz = isHov || isSel ? 4 : 3;
+    ctx.fillStyle = (isSel || isMultiSel) ? '#ff0' : isHov ? '#fff' : '#0ff';
+    const sz = isHov || isSel || isMultiSel ? 4 : 3;
     ctx.fillRect(s.x - sz, s.y - sz, sz * 2, sz * 2);
   });
 }
@@ -250,4 +252,19 @@ function drawPolygonPreview(): void {
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(sTarget.x, sTarget.y, 12, 0, Math.PI * 2); ctx.stroke();
   }
+}
+
+function drawBoxSelect(): void {
+  if (!boxSelectStart) return;
+  const s1 = w2s(boxSelectStart.x, boxSelectStart.y);
+  const s2 = w2s(mouseWorld.x, mouseWorld.y);
+  const x = Math.min(s1.x, s2.x), y = Math.min(s1.y, s2.y);
+  const w = Math.abs(s2.x - s1.x), h = Math.abs(s2.y - s1.y);
+  ctx.fillStyle = 'rgba(255, 255, 0, 0.08)';
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeRect(x, y, w, h);
+  ctx.setLineDash([]);
 }

@@ -21,6 +21,8 @@ export let dragState: DragState | null = null;
 export let mouseWorld: Point   = { x: 0, y: 0 };
 export let hovered: Selection | null = null;
 export let drawPoints: Point[] = [];
+export let multiSelected: Set<string> = new Set();
+export let boxSelectStart: Point | null = null;
 
 export function setTool(t: ToolType): void      { tool = t; }
 export function setSelected(s: Selection | null): void { selected = s; }
@@ -32,6 +34,8 @@ export function setDragState(v: DragState | null): void { dragState = v; }
 export function setMouseWorld(v: Point): void    { mouseWorld = v; }
 export function setHovered(h: Selection | null): void { hovered = h; }
 export function setDrawPoints(v: Point[]): void  { drawPoints = v; }
+export function setMultiSelected(s: Set<string>): void { multiSelected = s; }
+export function setBoxSelectStart(p: Point | null): void { boxSelectStart = p; }
 
 let _draw = (): void => {};
 let _renderPanel = (): void => {};
