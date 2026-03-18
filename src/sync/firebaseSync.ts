@@ -1,5 +1,5 @@
 import { db, mapRef } from '../config/firebase';
-import { uid, maps, selected, setSelected, triggerDraw, triggerRenderPanel } from '../state/appState';
+import { uid, maps, selected, setSelected, setSnapSize, triggerDraw, triggerRenderPanel } from '../state/appState';
 import type { MapCollection } from '../types';
 
 function colToType(col: string): string { return col.replace(/s$/, ''); }
@@ -23,6 +23,15 @@ function syncCollection(col: MapCollection): void {
 
 export function initSync(): void {
   (['vertices','linedefs','sidedefs','sectors','things'] as const).forEach(syncCollection);
+
+  db.ref('settings/snapSize').on('value', (s: FirebaseSnapshot) => {
+    const val = s.val();
+    if (val != null) {
+      setSnapSize(val);
+      const sel = document.getElementById('snap-size-sel') as HTMLSelectElement | null;
+      if (sel) sel.value = String(val);
+    }
+  });
 }
 
 export function initPresence(): void {
