@@ -57,7 +57,7 @@ function ensureInit(): void {
   sceneGroup = new THREE.Group();
   scene.add(sceneGroup);
 
-  // Ambient light
+  // Ambient light (unused by MeshBasicMaterial, kept for future use)
   scene.add(new THREE.AmbientLight(0xffffff, 1));
 
   // ── Event listeners ──

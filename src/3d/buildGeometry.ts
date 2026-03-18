@@ -38,8 +38,10 @@ function getTexSize(name: string): { w: number; h: number } {
 
 // ── Materials ──
 
+const BRIGHTNESS_SCALE = 0.5;
+
 function makeMaterial(texName: string, light: number): THREE.MeshBasicMaterial {
-  const brightness = Math.max(0.05, Math.min(1, light / 255));
+  const brightness = Math.max(0.05, Math.min(1, light / 255)) * BRIGHTNESS_SCALE;
   const tex = getTexture(texName);
   if (tex) {
     return new THREE.MeshBasicMaterial({
