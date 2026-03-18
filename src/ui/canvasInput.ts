@@ -269,7 +269,14 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       const tid = nearestThing(wx, wy);
       const lid = nearestLinedef(wx, wy);
 
-      if (vid !== null && multiSelected.size > 0 && multiSelected.has(vid)) {
+      if (vid !== null && e.ctrlKey) {
+        // Ctrl+click: toggle vertex in multiSelected
+        const next = new Set(multiSelected);
+        if (next.has(vid)) next.delete(vid);
+        else next.add(vid);
+        setMultiSelected(next);
+        setSelected(null); renderPanel();
+      } else if (vid !== null && multiSelected.size > 0 && multiSelected.has(vid)) {
         // Start multi-drag — anchor is the clicked vertex
         multiDragOrigins = new Map();
         for (const id of multiSelected) {

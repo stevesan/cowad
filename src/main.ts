@@ -1,7 +1,7 @@
 import './styles/main.css';
 import './config/firebase';
 import { db } from './config/firebase';
-import { pan, setCallbacks, setSnapSize } from './state/appState';
+import { pan, setCallbacks } from './state/appState';
 import { initRenderer, draw } from './canvas/renderer';
 import { renderPanel } from './ui/propertiesPanel';
 import { initCanvasInput, initKeyboard } from './ui/canvasInput';
