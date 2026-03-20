@@ -1,7 +1,7 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, multiSelected, setMultiSelected, triggerRenderPanel, triggerDraw } from '../state/appState';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
-import { pointInPoly } from '../geometry/hitTest';
+import { pointInPoly, polyArea } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import type { DrawVertex, Linedef, Point } from '../types';
@@ -337,20 +337,39 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
     }
   }
 
-  // 4. If no shared lines, check enclosing sector
+  // 4. Always find enclosing sector (needed for correct topology even when sharing lines)
+  //    Use an interior non-boundary vertex to avoid the test point landing inside a
+  //    neighbor sector that shares edges (which would pick the wrong enclosing sector).
   let enclosingSectorId: string | null = null;
-  if (!templateSector) {
-    let cx = 0, cy = 0;
-    for (const pt of chain) { cx += pt.x; cy += pt.y; }
-    cx /= n; cy /= n;
+  {
+    let testX = 0, testY = 0;
+    let foundNew = false;
+    for (let i = 1; i < n - 1; i++) {
+      if (!chain[i].existingId) {
+        testX = chain[i].x; testY = chain[i].y;
+        foundNew = true;
+        break;
+      }
+    }
+    if (!foundNew) {
+      // Fallback: centroid of all vertices
+      for (const pt of chain) { testX += pt.x; testY += pt.y; }
+      testX /= n; testY /= n;
+    }
+    let bestArea = Infinity;
     maps.sectors.forEach((sec, secId) => {
-      if (templateSector) return;
       const poly = buildSectorPoly(secId);
-      if (poly && pointInPoly(cx, cy, poly)) {
-        templateSector = { ...sec };
-        enclosingSectorId = secId;
+      if (poly && pointInPoly(testX, testY, poly)) {
+        const a = polyArea(poly);
+        if (a < bestArea) {
+          bestArea = a;
+          enclosingSectorId = secId;
+        }
       }
     });
+  }
+  if (!templateSector && enclosingSectorId) {
+    templateSector = { ...maps.sectors.get(enclosingSectorId)! };
   }
 
   // 5. Create sector
@@ -372,9 +391,22 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
     if (edge.isNew) {
       useFront = true; // new linedefs are oriented so front = interior
     } else {
-      // Correct side: front when (sameDirection XOR isCCW)
+      // Both sides occupied — find the enclosing sector's side and reassign it
+      if (ld.frontSide && ld.backSide && enclosingSectorId) {
+        const fsd = maps.sidedefs.get(ld.frontSide);
+        const bsd = maps.sidedefs.get(ld.backSide);
+        if (fsd && fsd.sector === enclosingSectorId) {
+          record(`map/sidedefs/${ld.frontSide}`, { ...fsd }, { ...fsd, sector: sid });
+          await mapRef('sidedefs').child(ld.frontSide).update({ sector: sid });
+        } else if (bsd && bsd.sector === enclosingSectorId) {
+          record(`map/sidedefs/${ld.backSide}`, { ...bsd }, { ...bsd, sector: sid });
+          await mapRef('sidedefs').child(ld.backSide).update({ sector: sid });
+        }
+        continue;
+      }
+      // One side free — use winding to pick the correct side
       useFront = edge.sameDirection !== isCCW;
-      if (useFront && ld.frontSide) continue; // already taken
+      if (useFront && ld.frontSide) continue;
       if (!useFront && ld.backSide) continue;
     }
 

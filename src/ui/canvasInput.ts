@@ -60,21 +60,32 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
     const first = drawChain[0];
     const last = drawChain[drawChain.length - 1];
     if (first.existingId && last.existingId && first.existingId !== last.existingId) {
-      let splitSectorId: string | null = null;
-      let bestArea = Infinity;
+      // Collect all sectors whose boundary loops contain both endpoints
+      const candidates: { sid: string; area: number }[] = [];
       maps.sectors.forEach((_, sid) => {
         const loops = buildSectorLoopIds(sid);
         for (const loop of loops) {
           if (loop.includes(first.existingId!) && loop.includes(last.existingId!)) {
             const poly = buildSectorPoly(sid);
-            if (poly) {
-              const a = polyArea(poly);
-              if (a < bestArea) { bestArea = a; splitSectorId = sid; }
-            }
+            if (poly) candidates.push({ sid, area: polyArea(poly) });
             break;
           }
         }
       });
+      candidates.sort((a, b) => a.area - b.area);
+
+      // Pick the first candidate whose polygon contains the chain's midpoint
+      let splitSectorId: string | null = null;
+      for (const cand of candidates) {
+        if (drawChain.length > 2) {
+          const midPt = drawChain[Math.floor(drawChain.length / 2)];
+          const poly = buildSectorPoly(cand.sid);
+          if (!poly || !pointInPoly(midPt.x, midPt.y, poly)) continue;
+        }
+        splitSectorId = cand.sid;
+        break;
+      }
+
       if (splitSectorId) {
         await splitSector(drawChain, splitSectorId);
         resetDraw();
