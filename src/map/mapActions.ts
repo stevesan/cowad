@@ -271,6 +271,85 @@ export function deleteSelected(): void {
   triggerRenderPanel();
 }
 
+export function deleteMultiSelected(): void {
+  if (multiSelected.size === 0) return;
+
+  beginAction();
+
+  const vidsToDelete = new Set(multiSelected);
+
+  // Find all linedefs touching any of these vertices
+  const lidsToDelete = new Set<string>();
+  maps.linedefs.forEach((ld, lid) => {
+    if (vidsToDelete.has(ld.v1) || vidsToDelete.has(ld.v2)) lidsToDelete.add(lid);
+  });
+
+  // Collect sidedefs and sectors that will be orphaned
+  const sdidsToDelete = new Set<string>();
+  const sectorRefCounts = new Map<string, number>();
+
+  // Count how many sidedefs reference each sector (only from linedefs NOT being deleted)
+  maps.linedefs.forEach((ld, lid) => {
+    if (lidsToDelete.has(lid)) return;
+    for (const sdId of [ld.frontSide, ld.backSide]) {
+      if (!sdId) continue;
+      const sd = maps.sidedefs.get(sdId);
+      if (sd?.sector) sectorRefCounts.set(sd.sector, (sectorRefCounts.get(sd.sector) ?? 0) + 1);
+    }
+  });
+
+  // Delete linedefs and their sidedefs
+  for (const lid of lidsToDelete) {
+    const ld = maps.linedefs.get(lid);
+    if (!ld) continue;
+    if (ld.frontSide) {
+      const sd = maps.sidedefs.get(ld.frontSide);
+      if (sd) {
+        record(`map/sidedefs/${ld.frontSide}`, { ...sd }, null);
+        sdidsToDelete.add(ld.frontSide);
+      }
+      mapRef('sidedefs').child(ld.frontSide).remove();
+    }
+    if (ld.backSide) {
+      const sd = maps.sidedefs.get(ld.backSide);
+      if (sd) {
+        record(`map/sidedefs/${ld.backSide}`, { ...sd }, null);
+        sdidsToDelete.add(ld.backSide);
+      }
+      mapRef('sidedefs').child(ld.backSide).remove();
+    }
+    record(`map/linedefs/${lid}`, { ...ld }, null);
+    mapRef('linedefs').child(lid).remove();
+  }
+
+  // Delete vertices
+  for (const vid of vidsToDelete) {
+    const v = maps.vertices.get(vid);
+    if (v) record(`map/vertices/${vid}`, { ...v }, null);
+    mapRef('vertices').child(vid).remove();
+  }
+
+  // Delete orphaned sectors (no remaining sidedefs reference them)
+  const orphanedSectors = new Set<string>();
+  maps.sectors.forEach((_, sid) => {
+    if (!sectorRefCounts.has(sid) || sectorRefCounts.get(sid) === 0) {
+      orphanedSectors.add(sid);
+    }
+  });
+  for (const sid of orphanedSectors) {
+    const sec = maps.sectors.get(sid);
+    if (sec) record(`map/sectors/${sid}`, { ...sec }, null);
+    mapRef('sectors').child(sid).remove();
+  }
+
+  endAction();
+
+  setMultiSelected(new Set());
+  setSelected(null);
+  triggerRenderPanel();
+  triggerDraw();
+}
+
 export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void> {
   const n = chain.length;
   if (n < 3) return;
