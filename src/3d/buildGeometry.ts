@@ -49,13 +49,11 @@ function makeMaterial(texName: string, light: number): THREE.MeshBasicMaterial {
     return new THREE.MeshBasicMaterial({
       map: tex.clone(),
       color: new THREE.Color(brightness, brightness, brightness),
-      side: THREE.DoubleSide,
     });
   }
   const c = Math.round(brightness * 180);
   return new THREE.MeshBasicMaterial({
     color: new THREE.Color(`rgb(${c},${c},${Math.round(c * 0.75)})`),
-    side: THREE.DoubleSide,
   });
 }
 
@@ -132,8 +130,18 @@ export function buildFloorsCeilings(group: THREE.Group): void {
     floorMesh.userData = { entityType: 'sector', entityId: sid, surface: 'floor' };
     group.add(floorMesh);
 
-    // Ceiling
+    // Ceiling (reverse winding so normals face downward)
     const ceilGeo = geo.clone();
+    const ceilIndex = ceilGeo.getIndex();
+    if (ceilIndex) {
+      const arr = ceilIndex.array as Uint16Array | Uint32Array;
+      for (let i = 0; i < arr.length; i += 3) {
+        const tmp = arr[i];
+        arr[i] = arr[i + 2];
+        arr[i + 2] = tmp;
+      }
+      ceilIndex.needsUpdate = true;
+    }
     const ceilMat = makeMaterial(sec.ceilTex || 'CEIL3_5', light);
     const ceilMesh = new THREE.Mesh(ceilGeo, ceilMat);
     ceilMesh.position.y = sec.ceiling ?? 128;
@@ -283,7 +291,8 @@ export function buildThings(group: THREE.Group): void {
       const spriteTop = floorH + sprite.topOffset;
       const rawBottom = spriteTop - h;
       // Clamp bottom to floor (DOOM clips sprites at floor level)
-      const spriteBottom = Math.max(rawBottom, floorH);
+      // Add small offset to prevent Z-fighting with the floor mesh
+      const spriteBottom = Math.max(rawBottom, floorH) + 0.1;
       const visibleH = spriteTop - spriteBottom;
       if (visibleH <= 0) return;
 
