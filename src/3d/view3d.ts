@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { maps, mouseWorld, setSelected } from '../state/appState';
+import { maps, mouseWorld, selected, setSelected } from '../state/appState';
 import { renderPanel } from '../ui/propertiesPanel';
 import { draw } from '../canvas/renderer';
 import { showToast } from '../ui/toast';
@@ -85,23 +85,9 @@ function ensureInit(): void {
   renderer.domElement.addEventListener('contextmenu', (e: Event) => e.preventDefault());
   renderer.domElement.addEventListener('mousedown', (e: MouseEvent) => {
     if (!pointerLocked) return;
-
-    if (e.button === 0 || e.button === 2) {
-      // Raycast from center of screen
-      mouse.set(0, 0);
-      raycaster.setFromCamera(mouse, camera);
-      const hits = raycaster.intersectObjects(sceneGroup.children, false);
-      if (hits.length > 0) {
-        const ud = hits[0].object.userData;
-        if (ud.entityType && ud.entityId) {
-          setSelected({ type: ud.entityType === 'linedef' ? 'linedef' : 'sector', id: ud.entityId });
-          renderPanel();
-        }
-      }
-      // Left-click: also exit pointer lock so user can edit properties
-      if (e.button === 0) {
-        document.exitPointerLock();
-      }
+    // Left-click: exit pointer lock so user can edit properties panel
+    if (e.button === 0) {
+      document.exitPointerLock();
     }
   });
 
@@ -204,6 +190,26 @@ function animate(time: number): void {
   // Apply camera rotation
   const lookTarget = camera.position.clone().add(forward);
   camera.lookAt(lookTarget);
+
+  // Continuously update selection from crosshair raycast
+  if (pointerLocked) {
+    mouse.set(0, 0);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(sceneGroup.children, false);
+    if (hits.length > 0) {
+      const ud = hits[0].object.userData;
+      if (ud.entityType && ud.entityId) {
+        const newType = ud.entityType === 'linedef' ? 'linedef' : 'sector';
+        if (!selected || selected.type !== newType || selected.id !== ud.entityId) {
+          setSelected({ type: newType, id: ud.entityId });
+          renderPanel();
+        }
+      }
+    } else if (selected) {
+      setSelected(null);
+      renderPanel();
+    }
+  }
 
   renderer!.render(scene, camera);
 }
