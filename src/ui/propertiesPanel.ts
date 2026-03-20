@@ -54,7 +54,7 @@ export function renderPanel(): void {
     if (!sd) return '';
     const p = (field: string) => `sidedefs/${sdid}/${field}`;
     return `<div class="prop-section${active ? ' active-side' : ''}">
-      <div class="panel-title">${title}${active ? ' ◀' : ''}</div>
+      <div class="panel-title">${title}</div>
       ${txtField('Sector', p('sector'), sd.sector ?? '')}
       ${numField('X Off',  p('xoff'),  sd.xoff)}
       ${numField('Y Off',  p('yoff'),  sd.yoff)}
