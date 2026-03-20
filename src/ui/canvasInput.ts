@@ -38,6 +38,7 @@ let dragOffset = { x: 0, y: 0 };
 let multiDragOrigins: Map<string, { x: number; y: number }> | null = null;
 let multiDragAnchorId: string | null = null;
 let boxSelectAdditive = false;
+let lastClientX = 0, lastClientY = 0;
 
 // ── Draw tool state ──
 let drawChain: DrawVertex[] = [];
@@ -312,6 +313,8 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
   });
 
   canvas.addEventListener('mousemove', e => {
+    lastClientX = e.clientX;
+    lastClientY = e.clientY;
     const { sx, sy } = getCanvasXY(e);
     setMouseWorld(s2w(sx, sy));
     document.getElementById('coords')!.textContent =
@@ -554,7 +557,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
       e.preventDefault(); redo(); return;
     }
 
-    if (e.key === ' ')      { setSpaceDown(true); e.preventDefault(); return; }
+    if (e.key === ' ')      { setSpaceDown(true); setIsPanning(true); setPanStart({ mx: lastClientX, my: lastClientY, px: pan.x, py: pan.y }); e.preventDefault(); return; }
     if (e.key === 'Escape') { resetDraw(); setMultiSelected(new Set()); setBoxSelectStart(null); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (multiSelected.size > 0) { deleteMultiSelected(); } else { deleteSelected(); }
@@ -573,7 +576,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
       if (mapped) doSetTool(mapped);
     }
   });
-  window.addEventListener('keyup', e => { if (e.key === ' ') setSpaceDown(false); });
+  window.addEventListener('keyup', e => { if (e.key === ' ') { setSpaceDown(false); setIsPanning(false); } });
 
   return doSetTool;
 }
