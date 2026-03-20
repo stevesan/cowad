@@ -11,7 +11,12 @@ function syncCollection(col: MapCollection): void {
   ref.on('child_changed', (s: FirebaseSnapshot) => {
     maps[col].set(s.key, s.val());
     triggerDraw();
-    if (selected && selected.type === colToType(col) && selected.id === s.key) triggerRenderPanel();
+    if (selected && selected.type === colToType(col) && selected.id === s.key) {
+      triggerRenderPanel();
+    } else if (col === 'sidedefs' && selected?.type === 'linedef') {
+      const ld = maps.linedefs.get(selected.id);
+      if (ld && (ld.frontSide === s.key || ld.backSide === s.key)) triggerRenderPanel();
+    }
   });
   ref.on('child_removed', (s: FirebaseSnapshot) => {
     maps[col].delete(s.key);
