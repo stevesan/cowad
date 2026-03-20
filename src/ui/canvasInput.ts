@@ -50,6 +50,61 @@ function resetDraw(): void {
   syncDrawPoints();
 }
 
+/** When drawing a new sector adjacent to an existing one, expand the chain to include
+ *  the boundary vertices between the two endpoints so existing linedefs get reused. */
+function expandChainWithBoundary(chain: DrawVertex[], sectorId: string): DrawVertex[] | null {
+  const startVid = chain[0].existingId!;
+  const endVid = chain[chain.length - 1].existingId!;
+
+  const loops = buildSectorLoopIds(sectorId);
+  let targetLoop: string[] | null = null;
+  for (const loop of loops) {
+    if (loop.includes(startVid) && loop.includes(endVid)) {
+      targetLoop = loop;
+      break;
+    }
+  }
+  if (!targetLoop) return null;
+
+  const si = targetLoop.indexOf(startVid);
+  const ei = targetLoop.indexOf(endVid);
+  const loopLen = targetLoop.length;
+
+  // Two boundary paths from endVid back to startVid (excluding both endpoints)
+  const pathA: string[] = [];
+  for (let i = (ei + 1) % loopLen; i !== si; i = (i + 1) % loopLen) {
+    pathA.push(targetLoop[i]);
+  }
+  const pathB: string[] = [];
+  for (let i = (ei - 1 + loopLen) % loopLen; i !== si; i = (i - 1 + loopLen) % loopLen) {
+    pathB.push(targetLoop[i]);
+  }
+
+  // Try both paths, pick the one producing the smaller polygon
+  // (the new adjacent sector is always smaller than the complement)
+  let bestExpanded: DrawVertex[] | null = null;
+  let bestArea = Infinity;
+
+  for (const path of [pathA, pathB]) {
+    const expanded: DrawVertex[] = [...chain];
+    let valid = true;
+    for (const vid of path) {
+      const v = maps.vertices.get(vid);
+      if (!v) { valid = false; break; }
+      expanded.push({ x: v.x, y: v.y, existingId: vid });
+    }
+    if (!valid || expanded.length < 3) continue;
+    const pts = expanded.map(p => ({ x: p.x, y: p.y }));
+    const area = polyArea(pts);
+    if (area < bestArea) {
+      bestArea = area;
+      bestExpanded = expanded;
+    }
+  }
+
+  return bestExpanded;
+}
+
 function validateNewEdge(ax: number, ay: number, bx: number, by: number): boolean {
   // Check against existing linedefs
   for (const [, ld] of maps.linedefs) {
@@ -85,25 +140,65 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
       });
       candidates.sort((a, b) => a.area - b.area);
 
-      // Pick the first candidate whose polygon contains the chain's midpoint
+      // Determine split vs adjacent: a split has new chain vertices INSIDE the sector
       let splitSectorId: string | null = null;
       for (const cand of candidates) {
         if (drawChain.length > 2) {
-          const midPt = drawChain[Math.floor(drawChain.length / 2)];
           const poly = buildSectorPoly(cand.sid);
-          if (!poly || !pointInPoly(midPt.x, midPt.y, poly)) continue;
+          if (!poly) continue;
+          // Check if any new (non-existing) vertex is inside this sector
+          let anyNewInside = false;
+          for (let i = 1; i < drawChain.length - 1; i++) {
+            if (!drawChain[i].existingId && pointInPoly(drawChain[i].x, drawChain[i].y, poly)) {
+              anyNewInside = true;
+              break;
+            }
+          }
+          if (!anyNewInside) continue;
         }
         splitSectorId = cand.sid;
         break;
       }
 
       if (splitSectorId) {
+        // For single-line split, check that no linedef already exists between endpoints
+        if (drawChain.length === 2) {
+          const va = first.existingId!, vb = last.existingId!;
+          let alreadyConnected = false;
+          maps.linedefs.forEach(ld => {
+            if ((ld.v1 === va && ld.v2 === vb) || (ld.v1 === vb && ld.v2 === va)) alreadyConnected = true;
+          });
+          if (alreadyConnected) {
+            showToast('Vertices already connected by a linedef');
+            resetDraw();
+            draw();
+            return;
+          }
+        }
         await splitSector(drawChain, splitSectorId);
         resetDraw();
         draw();
         return;
       }
+
+      // No split (midpoint outside sector) — adjacent sector creation
+      // Expand chain with boundary vertices so existing linedefs get shared
+      if (candidates.length > 0) {
+        const expanded = expandChainWithBoundary(drawChain, candidates[0].sid);
+        if (expanded) {
+          await createSectorFromPolygon(expanded);
+          resetDraw();
+          draw();
+          return;
+        }
+      }
     }
+  }
+  if (drawChain.length < 3) {
+    showToast('Need at least 3 vertices to create a sector');
+    resetDraw();
+    draw();
+    return;
   }
   await createSectorFromPolygon(drawChain);
   resetDraw();
@@ -461,7 +556,8 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
       return;
     }
     if (e.key.toLowerCase() === 'm' && tool === 'select') { mergeVertices(); return; }
-    if (e.key === '3') {
+    if (e.key === 'Tab') {
+      e.preventDefault();
       toggle3D();
       document.getElementById('view3d-btn')?.classList.toggle('active', is3DActive());
       return;

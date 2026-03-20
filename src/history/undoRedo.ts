@@ -59,7 +59,8 @@ export async function undo(): Promise<void> {
   try {
     const updates: Record<string, any> = {};
     for (const { path, before } of action.changes) {
-      updates[path] = before;
+      // Use the FIRST before value per path — it captures the true original state
+      if (!(path in updates)) updates[path] = before;
     }
     await db.ref().update(updates);
     redoStack.push(action);

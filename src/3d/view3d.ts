@@ -346,7 +346,7 @@ export function toggle3D(): void {
     lastTime = performance.now();
     animFrameId = requestAnimationFrame(animate);
     renderer!.domElement.requestPointerLock();
-    showToast('Left-click select | WASD move | Q/E up/down | Shift fast | C copy V paste | 3 to exit');
+    showToast('Left-click select | WASD move | Q/E up/down | Shift fast | C copy V paste | Tab to exit');
   } else {
     container!.style.display = 'none';
     canvas2d.style.display = '';
