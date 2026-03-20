@@ -1,4 +1,4 @@
-import { maps, selected, activeSide } from '../state/appState';
+import { maps, selected, activeSide, snapSize } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { THINGS, FLAG_BITS } from '../config/constants';
 import { deleteSelected } from '../map/mapActions';
@@ -150,6 +150,16 @@ export function renderPanel(): void {
           renderPanel(); // refresh preview
         },
       });
+    });
+  });
+
+  // Mouse wheel on number fields: increment/decrement by snap size
+  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? snapSize : -snapSize;
+      el.value = String((parseFloat(el.value) || 0) + delta);
+      el.dispatchEvent(new Event('change'));
     });
   });
 
