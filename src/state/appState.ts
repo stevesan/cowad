@@ -24,6 +24,7 @@ export let drawPoints: Point[] = [];
 export let multiSelected: Set<string> = new Set();
 export let boxSelectStart: Point | null = null;
 export let snapSize: number = 8;
+export let activeSide: 'front' | 'back' | null = null;
 
 export function setTool(t: ToolType): void      { tool = t; }
 export function setSelected(s: Selection | null): void { selected = s; }
@@ -38,6 +39,7 @@ export function setDrawPoints(v: Point[]): void  { drawPoints = v; }
 export function setMultiSelected(s: Set<string>): void { multiSelected = s; }
 export function setBoxSelectStart(p: Point | null): void { boxSelectStart = p; }
 export function setSnapSize(v: number): void { snapSize = v; }
+export function setActiveSide(s: 'front' | 'back' | null): void { activeSide = s; }
 
 let _draw = (): void => {};
 let _renderPanel = (): void => {};

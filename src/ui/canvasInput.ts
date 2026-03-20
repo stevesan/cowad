@@ -1,9 +1,9 @@
 import {
   maps, tool, selected, hovered, pan, zoom, isPanning, panStart,
-  spaceDown, dragState, mouseWorld, multiSelected, boxSelectStart,
+  spaceDown, dragState, mouseWorld, multiSelected, boxSelectStart, activeSide,
   setSelected, setHovered, setZoom, setIsPanning, setPanStart,
   setSpaceDown, setDragState, setMouseWorld, setTool, setDrawPoints,
-  setMultiSelected, setBoxSelectStart,
+  setMultiSelected, setBoxSelectStart, setActiveSide,
 } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
@@ -18,6 +18,17 @@ import { toggle3D, is3DActive } from '../3d/view3d';
 import type { ToolType, Selection, DrawVertex } from '../types';
 
 function select(type: Selection['type'], id: string): void { setSelected({ type, id }); renderPanel(); }
+
+function linedefSide(lid: string, wx: number, wy: number): 'front' | 'back' | null {
+  const ld = maps.linedefs.get(lid);
+  if (!ld) return null;
+  const v1 = maps.vertices.get(ld.v1);
+  const v2 = maps.vertices.get(ld.v2);
+  if (!v1 || !v2) return null;
+  // Cross product: positive = left of v1→v2 = back side, negative = right = front side
+  const cross = (v2.x - v1.x) * (wy - v1.y) - (v2.y - v1.y) * (wx - v1.x);
+  return cross < 0 ? 'front' : 'back';
+}
 
 let dragOrigin: Record<string, any> | null = null;
 let dragOffset = { x: 0, y: 0 };
@@ -257,6 +268,14 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
           if (poly && pointInPoly(wx, wy, poly)) h = { type: 'sector', id: sid };
         });
       }
+      // Update active side when cursor moves over a selected linedef
+      if (selected?.type === 'linedef') {
+        const side = linedefSide(selected.id, wx, wy);
+        if (side !== null && activeSide !== side) {
+          setActiveSide(side);
+          renderPanel();
+        }
+      }
       if (hovered?.type !== h?.type || hovered?.id !== h?.id) {
         setHovered(h);
         draw();
@@ -313,6 +332,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         if (t) { dragOrigin = { ...t }; dragOffset = { x: t.x - wx, y: t.y - wy }; }
       } else if (lid !== null) {
         setMultiSelected(new Set());
+        setActiveSide(linedefSide(lid, wx, wy));
         select('linedef', lid);
       } else {
         // Start box select (works on empty space and over sectors)

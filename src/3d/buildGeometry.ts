@@ -127,7 +127,7 @@ export function buildFloorsCeilings(group: THREE.Group): void {
     const floorMat = makeMaterial(sec.floorTex || 'FLOOR4_8', light);
     const floorMesh = new THREE.Mesh(geo, floorMat);
     floorMesh.position.y = sec.floor ?? 0;
-    floorMesh.userData = { entityType: 'sector', entityId: sid };
+    floorMesh.userData = { entityType: 'sector', entityId: sid, surface: 'floor' };
     group.add(floorMesh);
 
     // Ceiling
@@ -135,7 +135,7 @@ export function buildFloorsCeilings(group: THREE.Group): void {
     const ceilMat = makeMaterial(sec.ceilTex || 'CEIL3_5', light);
     const ceilMesh = new THREE.Mesh(ceilGeo, ceilMat);
     ceilMesh.position.y = sec.ceiling ?? 128;
-    ceilMesh.userData = { entityType: 'sector', entityId: sid };
+    ceilMesh.userData = { entityType: 'sector', entityId: sid, surface: 'ceiling' };
     group.add(ceilMesh);
   });
 }
@@ -147,7 +147,7 @@ function makeWallQuad(
   bottom: number, top: number,
   texName: string, light: number,
   xoff: number, yoff: number,
-  entityId: string, group: THREE.Group
+  entityId: string, sidedefId: string, surface: string, group: THREE.Group
 ): void {
   if (top <= bottom) return;
 
@@ -187,7 +187,7 @@ function makeWallQuad(
 
   const mat = makeMaterial(texName, light);
   const mesh = new THREE.Mesh(geo, mat);
-  mesh.userData = { entityType: 'linedef', entityId };
+  mesh.userData = { entityType: 'linedef', entityId, sidedefId, surface };
   group.add(mesh);
 }
 
@@ -212,7 +212,7 @@ export function buildWalls(group: THREE.Group): void {
       // Single-sided: full wall
       const texName = frontSd?.mid || 'STARTAN2';
       makeWallQuad(v1.x, v1.y, v2.x, v2.y, fFloor, fCeil,
-        texName, fLight, frontSd?.xoff ?? 0, frontSd?.yoff ?? 0, lid, group);
+        texName, fLight, frontSd?.xoff ?? 0, frontSd?.yoff ?? 0, lid, ld.frontSide!, 'mid', group);
     } else {
       const bFloor = backSec.floor ?? 0;
       const bCeil = backSec.ceiling ?? 128;
@@ -221,23 +221,23 @@ export function buildWalls(group: THREE.Group): void {
       // Upper wall (front side)
       if (fCeil > bCeil && frontSd) {
         makeWallQuad(v1.x, v1.y, v2.x, v2.y, bCeil, fCeil,
-          frontSd.upper || 'STARTAN2', fLight, frontSd.xoff ?? 0, frontSd.yoff ?? 0, lid, group);
+          frontSd.upper || 'STARTAN2', fLight, frontSd.xoff ?? 0, frontSd.yoff ?? 0, lid, ld.frontSide!, 'upper', group);
       }
       // Lower wall (front side)
       if (bFloor > fFloor && frontSd) {
         makeWallQuad(v1.x, v1.y, v2.x, v2.y, fFloor, bFloor,
-          frontSd.lower || 'STARTAN2', fLight, frontSd.xoff ?? 0, frontSd.yoff ?? 0, lid, group);
+          frontSd.lower || 'STARTAN2', fLight, frontSd.xoff ?? 0, frontSd.yoff ?? 0, lid, ld.frontSide!, 'lower', group);
       }
 
       // Upper wall (back side)
       if (bCeil > fCeil && backSd) {
         makeWallQuad(v2.x, v2.y, v1.x, v1.y, fCeil, bCeil,
-          backSd.upper || 'STARTAN2', bLight, backSd.xoff ?? 0, backSd.yoff ?? 0, lid, group);
+          backSd.upper || 'STARTAN2', bLight, backSd.xoff ?? 0, backSd.yoff ?? 0, lid, ld.backSide!, 'upper', group);
       }
       // Lower wall (back side)
       if (fFloor > bFloor && backSd) {
         makeWallQuad(v2.x, v2.y, v1.x, v1.y, bFloor, fFloor,
-          backSd.lower || 'STARTAN2', bLight, backSd.xoff ?? 0, backSd.yoff ?? 0, lid, group);
+          backSd.lower || 'STARTAN2', bLight, backSd.xoff ?? 0, backSd.yoff ?? 0, lid, ld.backSide!, 'lower', group);
       }
     }
   });

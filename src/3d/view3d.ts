@@ -1,11 +1,13 @@
 import * as THREE from 'three';
-import { maps, mouseWorld, selected, setSelected } from '../state/appState';
+import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide } from '../state/appState';
+import { mapRef } from '../config/firebase';
 import { renderPanel } from '../ui/propertiesPanel';
 import { draw } from '../canvas/renderer';
 import { showToast } from '../ui/toast';
 import { buildFloorsCeilings, buildWalls, clearTexCache } from './buildGeometry';
 import { buildSectorPolys } from '../geometry/cycleFinder';
 import { pointInPoly } from '../geometry/hitTest';
+import { beginAction, record, endAction } from '../history/undoRedo';
 
 let renderer: THREE.WebGLRenderer | null = null;
 let scene: THREE.Scene;
@@ -26,6 +28,47 @@ let pointerLocked = false;
 // ── Selection ──
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
+
+// ── Texture clipboard ──
+let copiedTexture: string | null = null;
+
+// ── Texture copy/paste helpers ──
+
+function getTextureFromHit(ud: any): string | null {
+  if (ud.entityType === 'sector' && ud.entityId) {
+    const sec = maps.sectors.get(ud.entityId);
+    if (!sec) return null;
+    return ud.surface === 'ceiling' ? (sec.ceilTex || 'CEIL3_5') : (sec.floorTex || 'FLOOR4_8');
+  }
+  if (ud.entityType === 'linedef' && ud.sidedefId && ud.surface) {
+    const sd = maps.sidedefs.get(ud.sidedefId);
+    if (!sd) return null;
+    return sd[ud.surface as 'upper' | 'mid' | 'lower'] || null;
+  }
+  return null;
+}
+
+function pasteTextureToHit(ud: any, tex: string): void {
+  if (ud.entityType === 'sector' && ud.entityId) {
+    const sec = maps.sectors.get(ud.entityId);
+    if (!sec) return;
+    const field = ud.surface === 'ceiling' ? 'ceilTex' : 'floorTex';
+    beginAction();
+    record(`map/sectors/${ud.entityId}`, { ...sec }, { ...sec, [field]: tex });
+    endAction();
+    mapRef('sectors').child(ud.entityId).update({ [field]: tex });
+    showToast(`Pasted ${tex} → ${ud.surface}`);
+  } else if (ud.entityType === 'linedef' && ud.sidedefId && ud.surface) {
+    const sd = maps.sidedefs.get(ud.sidedefId);
+    if (!sd) return;
+    const field = ud.surface as string;
+    beginAction();
+    record(`map/sidedefs/${ud.sidedefId}`, { ...sd }, { ...sd, [field]: tex });
+    endAction();
+    mapRef('sidedefs').child(ud.sidedefId).update({ [field]: tex });
+    showToast(`Pasted ${tex} → ${field}`);
+  }
+}
 
 // ── Init ──
 
@@ -94,6 +137,26 @@ function ensureInit(): void {
   window.addEventListener('keydown', e => {
     if (!isActive) return;
     keys[e.code] = true;
+
+    if (pointerLocked && (e.code === 'KeyC' || e.code === 'KeyV')) {
+      mouse.set(0, 0);
+      raycaster.setFromCamera(mouse, camera);
+      const hits = raycaster.intersectObjects(sceneGroup.children, false);
+      if (hits.length === 0) return;
+      const ud = hits[0].object.userData;
+
+      if (e.code === 'KeyC') {
+        // Copy texture from surface under crosshair
+        const tex = getTextureFromHit(ud);
+        if (tex) {
+          copiedTexture = tex;
+          showToast(`Copied: ${tex}`);
+        }
+      } else if (e.code === 'KeyV' && copiedTexture) {
+        // Paste texture onto surface under crosshair
+        pasteTextureToHit(ud, copiedTexture);
+      }
+    }
   });
   window.addEventListener('keyup', e => {
     keys[e.code] = false;
@@ -200,13 +263,21 @@ function animate(time: number): void {
       const ud = hits[0].object.userData;
       if (ud.entityType && ud.entityId) {
         const newType = ud.entityType === 'linedef' ? 'linedef' : 'sector';
-        if (!selected || selected.type !== newType || selected.id !== ud.entityId) {
+        // Determine active side for linedefs
+        let newSide: 'front' | 'back' | null = null;
+        if (newType === 'linedef' && ud.sidedefId) {
+          const ld = maps.linedefs.get(ud.entityId);
+          if (ld) newSide = ud.sidedefId === ld.frontSide ? 'front' : 'back';
+        }
+        if (!selected || selected.type !== newType || selected.id !== ud.entityId || activeSide !== newSide) {
           setSelected({ type: newType, id: ud.entityId });
+          setActiveSide(newSide);
           renderPanel();
         }
       }
     } else if (selected) {
       setSelected(null);
+      setActiveSide(null);
       renderPanel();
     }
   }

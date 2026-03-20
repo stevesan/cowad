@@ -1,4 +1,4 @@
-import { maps, selected } from '../state/appState';
+import { maps, selected, activeSide } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { THINGS, FLAG_BITS } from '../config/constants';
 import { deleteSelected } from '../map/mapActions';
@@ -49,12 +49,12 @@ export function renderPanel(): void {
     return `<div class="prop-row"><label>${label}</label>
       <input type="checkbox" data-bitmask="${bitmaskPath}" data-bit="${bit}" ${checked}></div>`;
   }
-  function sidedefBlock(title: string, sdid: string): string {
+  function sidedefBlock(title: string, sdid: string, active: boolean = false): string {
     const sd = maps.sidedefs.get(sdid);
     if (!sd) return '';
     const p = (field: string) => `sidedefs/${sdid}/${field}`;
-    return `<div class="prop-section">
-      <div class="panel-title">${title}</div>
+    return `<div class="prop-section${active ? ' active-side' : ''}">
+      <div class="panel-title">${title}${active ? ' ◀' : ''}</div>
       ${txtField('Sector', p('sector'), sd.sector ?? '')}
       ${numField('X Off',  p('xoff'),  sd.xoff)}
       ${numField('Y Off',  p('yoff'),  sd.yoff)}
@@ -76,8 +76,8 @@ export function renderPanel(): void {
     for (const { bit, label } of FLAG_BITS)
       html += chkField(label, `linedefs/${id}/flags`, bit, entity.flags || 0);
     html += `</div>`;
-    if (entity.frontSide) html += sidedefBlock('Front Sidedef', entity.frontSide);
-    if (entity.backSide)  html += sidedefBlock('Back Sidedef',  entity.backSide);
+    if (entity.frontSide) html += sidedefBlock('Front Sidedef', entity.frontSide, activeSide === 'front');
+    if (entity.backSide)  html += sidedefBlock('Back Sidedef',  entity.backSide, activeSide === 'back');
 
   } else if (type === 'sector') {
     const p = (f: string) => `sectors/${id}/${f}`;

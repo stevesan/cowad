@@ -41,6 +41,8 @@ canvas { display: block; width: 100%; height: 100%; }
 .prop-row input[type=checkbox] { accent-color: #c00; }
 .prop-section { border-top: 1px solid #222; padding-top: 6px; margin-top: 6px; }
 .prop-section .panel-title { color: #444; }
+.prop-section.active-side { background: #1a2a1a; border-left: 2px solid #4a4; padding-left: 6px; }
+.prop-section.active-side .panel-title { color: #6c6; }
 #panel-empty { color: #333; font-size: 11px; text-align: center; padding: 24px 0; }
 .del-btn { width: 100%; background: #2a1414; border: 1px solid #633; color: #f66;
            padding: 4px; cursor: pointer; font-size: 11px; margin-top: 8px; border-radius: 2px; }
