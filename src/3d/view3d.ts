@@ -247,8 +247,8 @@ function animate(time: number): void {
   if (keys['KeyS']) camera.position.addScaledVector(forward, -speed);
   if (keys['KeyA']) camera.position.addScaledVector(right, -speed);
   if (keys['KeyD']) camera.position.addScaledVector(right, speed);
-  if (keys['KeyE']) camera.position.addScaledVector(up, speed);
-  if (keys['KeyQ']) camera.position.addScaledVector(up, -speed);
+  if (keys['KeyQ']) camera.position.addScaledVector(up, speed);
+  if (keys['KeyE']) camera.position.addScaledVector(up, -speed);
 
   // Apply camera rotation
   const lookTarget = camera.position.clone().add(forward);
@@ -302,7 +302,7 @@ export function toggle3D(): void {
     lastTime = performance.now();
     animFrameId = requestAnimationFrame(animate);
     renderer!.domElement.requestPointerLock();
-    showToast('Left-click select | WASD move | Q/E down/up | Shift fast | C copy V paste | 3 to exit');
+    showToast('Left-click select | WASD move | Q/E up/down | Shift fast | C copy V paste | 3 to exit');
   } else {
     container!.style.display = 'none';
     canvas2d.style.display = '';
