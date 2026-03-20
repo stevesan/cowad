@@ -359,6 +359,7 @@ export async function importWad(file: File): Promise<{ flats: number; walls: num
 
   // Persist to Firebase (replace any previous IWAD)
   await saveTexturesToDb();
+  await saveSpritesToDb();
 
   return { flats: flats.length, walls: walls.length };
 }
@@ -371,6 +372,14 @@ async function saveTexturesToDb(): Promise<void> {
     obj[key] = { name: t.name, type: t.type, width: t.width, height: t.height, dataUrl: t.dataUrl };
   });
   await db.ref('textures').set(obj);
+}
+
+async function saveSpritesToDb(): Promise<void> {
+  const obj: Record<string, { name: string; width: number; height: number; topOffset: number; dataUrl: string }> = {};
+  sprites.forEach((s, key) => {
+    obj[key] = { name: s.name, width: s.width, height: s.height, topOffset: s.topOffset, dataUrl: s.dataUrl };
+  });
+  await db.ref('sprites').set(obj);
 }
 
 export async function loadTexturesFromDb(): Promise<void> {
@@ -386,6 +395,22 @@ export async function loadTexturesFromDb(): Promise<void> {
       width: t.width,
       height: t.height,
       dataUrl: t.dataUrl,
+    });
+  }
+
+  // Load sprites
+  const spriteSnap = await db.ref('sprites').once('value');
+  const sv = spriteSnap.val();
+  if (!sv) return;
+  sprites = new Map();
+  for (const key of Object.keys(sv)) {
+    const s = sv[key];
+    sprites.set(key, {
+      name: s.name,
+      width: s.width,
+      height: s.height,
+      topOffset: s.topOffset,
+      dataUrl: s.dataUrl,
     });
   }
 }
