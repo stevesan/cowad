@@ -1,5 +1,6 @@
 import { parseWad, getLump, getLumpsBetween, type WadFile } from './wadReader';
 import { db } from '../config/firebase';
+import { THING_SPRITE } from '../config/constants';
 
 export interface TextureEntry {
   name: string;
@@ -65,6 +66,7 @@ function extractFlats(wad: WadFile, palette: Palette): TextureEntry[] {
 interface PatchPixels {
   width: number;
   height: number;
+  topOffset: number;
   pixels: Uint8Array; // w*h palette indices, 255 = transparent
 }
 
@@ -73,7 +75,8 @@ function decodePatch(data: ArrayBuffer, offset: number, size: number): PatchPixe
   const dv = new DataView(data, offset, size);
   const width = dv.getUint16(0, true);
   const height = dv.getUint16(2, true);
-  // leftOffset = dv.getInt16(4, true); topOffset = dv.getInt16(6, true); // not needed for rendering
+  // leftOffset = dv.getInt16(4, true);
+  const topOffset = dv.getInt16(6, true);
 
   if (width === 0 || height === 0 || width > 4096 || height > 4096) return null;
   if (size < 8 + width * 4) return null;
@@ -114,7 +117,7 @@ function decodePatch(data: ArrayBuffer, offset: number, size: number): PatchPixe
     }
   }
 
-  return { width, height, pixels };
+  return { width, height, topOffset, pixels };
 }
 
 // ── Wall textures (TEXTURE1/TEXTURE2 + PNAMES compositor) ──
@@ -261,6 +264,76 @@ function imageDataToUrl(img: ImageData): string {
   return _canvas.toDataURL();
 }
 
+// ── Sprite extraction ──
+
+export interface SpriteEntry {
+  name: string;
+  width: number;
+  height: number;
+  topOffset: number;
+  dataUrl: string;
+}
+
+let sprites: Map<string, SpriteEntry> = new Map();
+
+export function getSpritePrefixEntry(prefix: string): SpriteEntry | null {
+  const p = prefix.toUpperCase();
+  return sprites.get(p + 'A0') || sprites.get(p + 'A1') || null;
+}
+
+function extractSprites(wad: WadFile, palette: Palette): void {
+  sprites = new Map();
+  const spriteLumps = [
+    ...getLumpsBetween(wad, 'S_START', 'S_END'),
+    ...getLumpsBetween(wad, 'SS_START', 'SS_END'),
+  ];
+
+  const neededPrefixes = new Set(Object.values(THING_SPRITE));
+
+  for (const lump of spriteLumps) {
+    if (lump.size < 8 || lump.name.length < 6) continue;
+    const prefix = lump.name.substring(0, 4);
+    if (!neededPrefixes.has(prefix)) continue;
+
+    // Only extract first frame: prefix + 'A' + rotation ('0' = all angles, '1' = front)
+    const frameChar = lump.name[4];
+    const rotChar = lump.name[5];
+    if (frameChar !== 'A') continue;
+    if (rotChar !== '0' && rotChar !== '1') continue;
+
+    const key = prefix + 'A' + rotChar;
+    // Prefer A0 (omnidirectional) over A1 (front-facing)
+    if (sprites.has(prefix + 'A0')) continue;
+    if (rotChar === '1' && sprites.has(key)) continue;
+
+    const patch = decodePatch(wad.data, lump.offset, lump.size);
+    if (!patch) continue;
+
+    // Convert to RGBA with transparency
+    const imageData = new ImageData(patch.width, patch.height);
+    const d = imageData.data;
+    for (let i = 0; i < patch.width * patch.height; i++) {
+      const ci = patch.pixels[i];
+      if (ci === 255) {
+        d[i * 4 + 3] = 0; // transparent
+      } else {
+        d[i * 4] = palette[ci * 3];
+        d[i * 4 + 1] = palette[ci * 3 + 1];
+        d[i * 4 + 2] = palette[ci * 3 + 2];
+        d[i * 4 + 3] = 255;
+      }
+    }
+
+    sprites.set(key, {
+      name: lump.name,
+      width: patch.width,
+      height: patch.height,
+      topOffset: patch.topOffset,
+      dataUrl: imageDataToUrl(imageData),
+    });
+  }
+}
+
 // ── Public API ──
 
 let textures: Map<string, TextureEntry> = new Map();
@@ -278,6 +351,7 @@ export async function importWad(file: File): Promise<{ flats: number; walls: num
 
   const flats = extractFlats(wad, palette);
   const walls = extractWallTextures(wad, palette);
+  extractSprites(wad, palette);
 
   textures = new Map();
   for (const t of flats) textures.set(t.name, t);

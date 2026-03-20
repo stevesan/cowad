@@ -4,7 +4,7 @@ import { mapRef } from '../config/firebase';
 import { renderPanel } from '../ui/propertiesPanel';
 import { draw } from '../canvas/renderer';
 import { showToast } from '../ui/toast';
-import { buildFloorsCeilings, buildWalls, clearTexCache } from './buildGeometry';
+import { buildFloorsCeilings, buildWalls, buildThings, clearTexCache } from './buildGeometry';
 import { buildSectorPolys } from '../geometry/cycleFinder';
 import { pointInPoly } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
@@ -189,6 +189,7 @@ function rebuildScene(): void {
 
   buildFloorsCeilings(sceneGroup);
   buildWalls(sceneGroup);
+  buildThings(sceneGroup);
 }
 
 // ── Camera positioning ──
@@ -279,6 +280,17 @@ function animate(time: number): void {
       setSelected(null);
       setActiveSide(null);
       renderPanel();
+    }
+  }
+
+  // Rotate billboards (things) to face camera, upright only
+  const billboardDir = new THREE.Vector3();
+  for (const obj of sceneGroup.children) {
+    if (obj.userData.billboard) {
+      billboardDir.copy(camera.position).sub(obj.position);
+      billboardDir.y = 0;
+      billboardDir.normalize();
+      obj.lookAt(obj.position.clone().add(billboardDir));
     }
   }
 

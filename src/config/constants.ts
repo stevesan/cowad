@@ -75,6 +75,22 @@ export const CAT_COLOR: Record<string, string> = {
   powerup: '#f4f',
 };
 
+export const THING_SPRITE: Record<number, string> = {
+  1: 'PLAY', 2: 'PLAY', 3: 'PLAY', 4: 'PLAY', 11: 'PLAY',
+  3004: 'POSS', 9: 'SPOS', 3001: 'TROO', 3002: 'SARG', 58: 'SARG',
+  3005: 'HEAD', 3003: 'BOSS', 3006: 'SKUL', 16: 'CYBR', 7: 'SPID',
+  65: 'CPOS', 64: 'VILE', 66: 'SKEL', 67: 'FATT', 68: 'BSPI',
+  69: 'BOS2', 71: 'PAIN', 84: 'SSWV',
+  2005: 'CSAW', 2001: 'SHOT', 82: 'SGN2', 2002: 'MGUN',
+  2003: 'LAUN', 2004: 'PLAS', 2006: 'BFUG',
+  2007: 'CLIP', 2048: 'AMMO', 2008: 'SHEL', 2049: 'SBOX',
+  2010: 'ROCK', 2046: 'BROK', 2047: 'CELL', 17: 'CELP',
+  2014: 'BON1', 2011: 'STIM', 2012: 'MEDI', 2013: 'SOUL', 83: 'MEGA',
+  2015: 'BON2', 2018: 'ARM1', 2019: 'ARM2',
+  5: 'BKEY', 13: 'RKEY', 6: 'YKEY', 40: 'BSKU', 38: 'RSKU', 39: 'YSKU',
+  2022: 'PINV', 2023: 'PSTR', 2024: 'PINS', 2025: 'SUIT', 2026: 'PMAP', 2045: 'PVIS',
+};
+
 export const FLAG_BITS = [
   { bit: 1,  label: 'Impassable' },
   { bit: 4,  label: 'Two-Sided'  },

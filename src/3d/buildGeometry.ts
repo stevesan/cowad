@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { maps } from '../state/appState';
 import { buildSectorPolys } from '../geometry/cycleFinder';
-import { getTextureDataUrl, isWadLoaded, getTextures } from '../wad/textureLoader';
+import { pointInPoly } from '../geometry/hitTest';
+import { getTextureDataUrl, isWadLoaded, getTextures, getSpritePrefixEntry } from '../wad/textureLoader';
+import { THINGS, CAT_COLOR, THING_SPRITE } from '../config/constants';
 
 // ── Texture cache ──
 
@@ -240,6 +242,88 @@ export function buildWalls(group: THREE.Group): void {
           backSd.lower || 'STARTAN2', bLight, backSd.xoff ?? 0, backSd.yoff ?? 0, lid, ld.backSide!, 'lower', group);
       }
     }
+  });
+}
+
+// ── Things ──
+
+function thingFloorHeight(wx: number, wy: number): number {
+  let floorH = 0;
+  maps.sectors.forEach((sec, sid) => {
+    const loops = buildSectorPolys(sid);
+    for (const poly of loops) {
+      if (poly.length >= 3 && pointInPoly(wx, wy, poly)) {
+        floorH = sec.floor ?? 0;
+        return;
+      }
+    }
+  });
+  return floorH;
+}
+
+export function buildThings(group: THREE.Group): void {
+  const spriteTexCache = new Map<string, THREE.Texture>();
+
+  maps.things.forEach((thing, tid) => {
+    const info = THINGS[thing.type];
+    const cat = info?.cat || 'player';
+    const radius = info?.r || 16;
+    const color = CAT_COLOR[cat] || '#fff';
+    const floorH = thingFloorHeight(thing.x, thing.y);
+
+    // Try sprite
+    const spritePrefix = THING_SPRITE[thing.type];
+    const sprite = spritePrefix ? getSpritePrefixEntry(spritePrefix) : null;
+
+    let mesh: THREE.Mesh;
+
+    if (sprite) {
+      const w = sprite.width;
+      const h = sprite.height;
+      const spriteTop = floorH + sprite.topOffset;
+      const spriteBottom = spriteTop - h;
+
+      const geo = new THREE.PlaneGeometry(w, h);
+
+      let tex = spriteTexCache.get(sprite.name);
+      if (!tex) {
+        const img = new Image();
+        img.src = sprite.dataUrl;
+        tex = new THREE.Texture(img);
+        tex.magFilter = THREE.NearestFilter;
+        tex.minFilter = THREE.NearestFilter;
+        img.onload = () => { tex!.needsUpdate = true; };
+        if (img.complete) tex.needsUpdate = true;
+        spriteTexCache.set(sprite.name, tex);
+      }
+
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex.clone(),
+        transparent: true,
+        alphaTest: 0.5,
+        side: THREE.DoubleSide,
+        color: new THREE.Color(BRIGHTNESS_SCALE, BRIGHTNESS_SCALE, BRIGHTNESS_SCALE),
+      });
+
+      mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(thing.x, spriteBottom + h / 2, -thing.y);
+    } else {
+      // Colored marker billboard
+      const h = radius * 2;
+      const w = radius;
+      const geo = new THREE.PlaneGeometry(w, h);
+      const mat = new THREE.MeshBasicMaterial({
+        color: new THREE.Color(color),
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.8,
+      });
+      mesh = new THREE.Mesh(geo, mat);
+      mesh.position.set(thing.x, floorH + h / 2, -thing.y);
+    }
+
+    mesh.userData = { entityType: 'thing', entityId: tid, billboard: true };
+    group.add(mesh);
   });
 }
 
