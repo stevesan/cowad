@@ -15,6 +15,7 @@ import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
 import { showToast } from './toast';
 import { toggle3D, is3DActive } from '../3d/view3d';
+import { launchWAD } from '../export/wadExport';
 import type { ToolType, Selection, DrawVertex } from '../types';
 
 function select(type: Selection['type'], id: string): void { setSelected({ type, id }); renderPanel(); }
@@ -540,6 +541,10 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
   window.addEventListener('keydown', e => {
     if (['INPUT','SELECT','TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
+    // Play: Ctrl+P
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+      e.preventDefault(); launchWAD(); return;
+    }
     // Undo: Ctrl+Z
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
       e.preventDefault(); undo(); return;
