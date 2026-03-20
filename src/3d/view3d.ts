@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide } from '../state/appState';
+import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide, snapSize } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { renderPanel } from '../ui/propertiesPanel';
 import { draw } from '../canvas/renderer';
@@ -134,6 +134,27 @@ function ensureInit(): void {
       document.exitPointerLock();
     }
   });
+
+  renderer.domElement.addEventListener('wheel', (e: WheelEvent) => {
+    if (!pointerLocked || !isActive) return;
+    e.preventDefault();
+    mouse.set(0, 0);
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObjects(sceneGroup.children, false);
+    if (hits.length === 0) return;
+    const ud = hits[0].object.userData;
+    if (ud.entityType !== 'sector' || !ud.entityId) return;
+    const sec = maps.sectors.get(ud.entityId);
+    if (!sec) return;
+    const step = e.ctrlKey ? Math.max(1, snapSize / 2) : snapSize;
+    const delta = e.deltaY < 0 ? step : -step;
+    const field = ud.surface === 'ceiling' ? 'ceiling' : 'floor';
+    const newVal = (sec[field] ?? (field === 'ceiling' ? 128 : 0)) + delta;
+    beginAction();
+    record(`map/sectors/${ud.entityId}`, { ...sec }, { ...sec, [field]: newVal });
+    endAction();
+    mapRef('sectors').child(ud.entityId).update({ [field]: newVal });
+  }, { passive: false });
 
   window.addEventListener('keydown', e => {
     if (!isActive) return;
