@@ -155,10 +155,10 @@ export const THING_SPRITE: Record<number, string> = {
   48: 'ELEC', 30: 'COL1', 32: 'COL3', 31: 'COL2', 33: 'COL4',
   36: 'COL5', 37: 'COL6', 47: 'SMIT', 41: 'CEYE', 42: 'FSKU',
   // Gore
-  10: 'PLAY', 12: 'PLAY', 24: 'POL5', 27: 'POL4', 28: 'POL2', 29: 'POL3',
+  10: 'POL5', 12: 'POL5', 24: 'POL5', 27: 'POL4', 28: 'POL2', 29: 'POL3',
   25: 'POL1', 26: 'POL6', 49: 'GOR1', 50: 'GOR2', 51: 'GOR3', 52: 'GOR4', 53: 'GOR5',
   73: 'HDB1', 74: 'HDB2', 75: 'HDB3', 76: 'HDB4', 77: 'HDB5', 78: 'HDB6', 79: 'POB1',
-  15: 'PLAY', 18: 'POSS', 19: 'SPOS', 20: 'TROO', 21: 'SARG', 22: 'HEAD', 23: 'SKUL',
+  15: 'PLAYN', 18: 'POSSL', 19: 'SPOSL', 20: 'TROOM', 21: 'SARGN', 22: 'HEADL', 23: 'SKULK',
   14: 'TFOG', 88: 'BBRN', 89: 'BOSF', 87: 'FIRE',
 };
 

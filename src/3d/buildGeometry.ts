@@ -281,9 +281,23 @@ export function buildThings(group: THREE.Group): void {
       const w = sprite.width;
       const h = sprite.height;
       const spriteTop = floorH + sprite.topOffset;
-      const spriteBottom = spriteTop - h;
+      const rawBottom = spriteTop - h;
+      // Clamp bottom to floor (DOOM clips sprites at floor level)
+      const spriteBottom = Math.max(rawBottom, floorH);
+      const visibleH = spriteTop - spriteBottom;
+      if (visibleH <= 0) return;
 
-      const geo = new THREE.PlaneGeometry(w, h);
+      const geo = new THREE.PlaneGeometry(w, visibleH);
+
+      // Crop bottom of texture if sprite extends below floor
+      if (rawBottom < floorH) {
+        const cropFrac = (floorH - rawBottom) / h;
+        const uvAttr = geo.getAttribute('uv') as THREE.BufferAttribute;
+        for (let i = 0; i < uvAttr.count; i++) {
+          const v = uvAttr.getY(i);
+          uvAttr.setY(i, cropFrac + v * (1 - cropFrac));
+        }
+      }
 
       let tex = spriteTexCache.get(sprite.name);
       if (!tex) {
@@ -306,7 +320,7 @@ export function buildThings(group: THREE.Group): void {
       });
 
       mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(thing.x, spriteBottom + h / 2, -thing.y);
+      mesh.position.set(thing.x, spriteBottom + visibleH / 2, -thing.y);
     } else {
       // Colored marker billboard
       const h = radius * 2;

@@ -276,9 +276,14 @@ export interface SpriteEntry {
 
 let sprites: Map<string, SpriteEntry> = new Map();
 
-export function getSpritePrefixEntry(prefix: string): SpriteEntry | null {
-  const p = prefix.toUpperCase();
-  return sprites.get(p + 'A0') || sprites.get(p + 'A1') || null;
+export function getSpritePrefixEntry(spec: string): SpriteEntry | null {
+  const s = spec.toUpperCase();
+  if (s.length >= 5) {
+    // Specific frame: e.g. 'PLAYN' → look for PLAYN0, PLAYN1
+    return sprites.get(s + '0') || sprites.get(s + '1') || null;
+  }
+  // Default: frame A, e.g. 'PLAY' → PLAYA0, PLAYA1
+  return sprites.get(s + 'A0') || sprites.get(s + 'A1') || null;
 }
 
 function extractSprites(wad: WadFile, palette: Palette): void {
@@ -288,22 +293,32 @@ function extractSprites(wad: WadFile, palette: Palette): void {
     ...getLumpsBetween(wad, 'SS_START', 'SS_END'),
   ];
 
-  const neededPrefixes = new Set(Object.values(THING_SPRITE));
+  // Build sets of needed 4-char prefixes and 5-char prefix+frame specs
+  const neededPrefixes = new Set<string>();
+  const neededSpecificFrames = new Set<string>();
+  for (const spec of Object.values(THING_SPRITE)) {
+    const s = spec.toUpperCase();
+    neededPrefixes.add(s.substring(0, 4));
+    if (s.length >= 5) neededSpecificFrames.add(s);
+  }
 
   for (const lump of spriteLumps) {
     if (lump.size < 8 || lump.name.length < 6) continue;
     const prefix = lump.name.substring(0, 4);
     if (!neededPrefixes.has(prefix)) continue;
 
-    // Only extract first frame: prefix + 'A' + rotation ('0' = all angles, '1' = front)
     const frameChar = lump.name[4];
     const rotChar = lump.name[5];
-    if (frameChar !== 'A') continue;
     if (rotChar !== '0' && rotChar !== '1') continue;
 
-    const key = prefix + 'A' + rotChar;
-    // Prefer A0 (omnidirectional) over A1 (front-facing)
-    if (sprites.has(prefix + 'A0')) continue;
+    const prefixFrame = prefix + frameChar;
+    const isDefaultFrame = frameChar === 'A';
+    const isSpecificFrame = neededSpecificFrames.has(prefixFrame);
+    if (!isDefaultFrame && !isSpecificFrame) continue;
+
+    const key = prefixFrame + rotChar;
+    // Prefer rot 0 (omnidirectional) over rot 1 (front-facing)
+    if (sprites.has(prefixFrame + '0')) continue;
     if (rotChar === '1' && sprites.has(key)) continue;
 
     const patch = decodePatch(wad.data, lump.offset, lump.size);
