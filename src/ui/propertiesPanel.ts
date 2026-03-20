@@ -153,5 +153,10 @@ export function renderPanel(): void {
     });
   });
 
+  // Select all text on click for easy editing
+  pContent.querySelectorAll<HTMLInputElement>('input[type="text"], input[type="number"]').forEach(el => {
+    el.addEventListener('focus', () => el.select());
+  });
+
   document.getElementById('del-btn')!.addEventListener('click', deleteSelected);
 }
