@@ -8,6 +8,7 @@ import { buildFloorsCeilings, buildWalls, buildThings, clearTexCache } from './b
 import { buildSectorPolys } from '../geometry/cycleFinder';
 import { pointInPoly } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
+import { openTextureBrowser } from '../ui/textureBrowser';
 
 let renderer: THREE.WebGLRenderer | null = null;
 let scene: THREE.Scene;
@@ -138,7 +139,7 @@ function ensureInit(): void {
     if (!isActive) return;
     keys[e.code] = true;
 
-    if (pointerLocked && (e.code === 'KeyC' || e.code === 'KeyV')) {
+    if (pointerLocked && (e.code === 'KeyC' || e.code === 'KeyV' || e.code === 'KeyT')) {
       mouse.set(0, 0);
       raycaster.setFromCamera(mouse, camera);
       const hits = raycaster.intersectObjects(sceneGroup.children, false);
@@ -155,6 +156,16 @@ function ensureInit(): void {
       } else if (e.code === 'KeyV' && copiedTexture) {
         // Paste texture onto surface under crosshair
         pasteTextureToHit(ud, copiedTexture);
+      } else if (e.code === 'KeyT') {
+        // Open texture browser for surface under crosshair
+        const currentTex = getTextureFromHit(ud) || '';
+        const texType: 'flat' | 'wall' = ud.entityType === 'sector' ? 'flat' : 'wall';
+        document.exitPointerLock();
+        openTextureBrowser({
+          filter: texType,
+          currentValue: currentTex,
+          onSelect: (name) => { pasteTextureToHit(ud, name); },
+        });
       }
     }
   });
