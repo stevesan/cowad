@@ -33,7 +33,9 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
     input.click();
   });
 
-  document.getElementById('thing-type-btn')!.addEventListener('click', openThingBrowser);
+  document.getElementById('thing-type-btn')!.addEventListener('click', () => {
+    openThingBrowser(() => doSetTool('thing'));
+  });
 
   document.getElementById('view3d-btn')!.addEventListener('click', () => {
     toggle3D();

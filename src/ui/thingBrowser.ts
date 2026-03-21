@@ -4,6 +4,7 @@ import { getSpritePrefixEntry } from '../wad/textureLoader';
 let selectedThingType = 1; // default Player 1 Start
 let searchQuery = '';
 let activeCategory = 'all';
+let onSelectCallback: (() => void) | null = null;
 
 const CAT_LABELS: Record<string, string> = {
   player: 'Players', enemy: 'Enemies', weapon: 'Weapons', ammo: 'Ammo',
@@ -154,11 +155,13 @@ function renderGrid(): void {
       selectedThingType = id;
       updateToolbarButton();
       closeThingBrowser();
+      if (onSelectCallback) onSelectCallback();
     });
   });
 }
 
-export function openThingBrowser(): void {
+export function openThingBrowser(onSelect?: () => void): void {
+  onSelectCallback = onSelect ?? null;
   const modal = getModal();
   activeCategory = 'all';
   searchQuery = '';
