@@ -9,7 +9,8 @@
       "Bash(find:*)",
       "Bash(npm run:*)",
       "Bash(npm install:*)",
-      "Bash(find /Users/stevenan/cowad -type f \\\\\\(-name *.png -o -name *.jpg -o -name *.jpeg -o -name *.gif \\\\\\) -not -path */node_modules/*)"
+      "Bash(find /Users/stevenan/cowad -type f \\\\\\(-name *.png -o -name *.jpg -o -name *.jpeg -o -name *.gif \\\\\\) -not -path */node_modules/*)",
+      "Bash(xargs ls:*)"
     ]
   }
 }

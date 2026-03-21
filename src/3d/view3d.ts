@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide, snapSize } from '../state/appState';
+import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide, snapSize, multiSelected, multiSelectType, setMultiSelected } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { renderPanel } from '../ui/propertiesPanel';
 import { draw } from '../canvas/renderer';
@@ -29,6 +29,8 @@ let pointerLocked = false;
 // ── Selection ──
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
+let crosshairEl: HTMLElement | null = null;
+let unlockedMouse = new THREE.Vector2();
 
 // ── Texture clipboard ──
 let copiedTexture: string | null = null;
@@ -85,11 +87,11 @@ function ensureInit(): void {
   wrap.appendChild(container);
 
   // Crosshair
-  const crosshair = document.createElement('div');
-  crosshair.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
+  crosshairEl = document.createElement('div');
+  crosshairEl.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);' +
     'width:16px;height:16px;pointer-events:none;z-index:11;' +
     'border:1px solid rgba(255,255,255,0.4);border-radius:50%;';
-  container.appendChild(crosshair);
+  container.appendChild(crosshairEl);
 
   renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(window.devicePixelRatio);
@@ -108,30 +110,74 @@ function ensureInit(): void {
 
   // ── Event listeners ──
 
-  renderer.domElement.addEventListener('click', () => {
+  renderer.domElement.addEventListener('click', (e: MouseEvent) => {
     if (!pointerLocked) {
-      renderer!.domElement.requestPointerLock();
+      // Unlocked: raycast from cursor to select/shift-select
+      raycaster.setFromCamera(unlockedMouse, camera);
+      const hits = raycaster.intersectObjects(sceneGroup.children, false);
+      if (hits.length > 0) {
+        const ud = hits[0].object.userData;
+        if (ud.entityType && ud.entityId) {
+          const hitType = ud.entityType === 'linedef' ? 'linedef' : ud.entityType === 'sector' ? 'sector' : null;
+          if (hitType === 'sector' && e.shiftKey) {
+            // Shift+click: multi-select sectors
+            const next = multiSelectType === 'sector' ? new Set(multiSelected) : new Set<string>();
+            if (selected?.type === 'sector' && !next.has(selected.id)) next.add(selected.id);
+            if (next.has(ud.entityId)) next.delete(ud.entityId);
+            else next.add(ud.entityId);
+            setMultiSelected(next, 'sector');
+            setSelected(null);
+            renderPanel();
+          } else if (hitType) {
+            setMultiSelected(new Set<string>());
+            let newSide: 'front' | 'back' | null = null;
+            if (hitType === 'linedef' && ud.sidedefId) {
+              const ld = maps.linedefs.get(ud.entityId);
+              if (ld) newSide = ud.sidedefId === ld.frontSide ? 'front' : 'back';
+            }
+            setSelected({ type: hitType, id: ud.entityId });
+            setActiveSide(newSide);
+            renderPanel();
+            draw();
+          }
+        }
+      } else if (!e.shiftKey) {
+        setMultiSelected(new Set<string>());
+        setSelected(null);
+        renderPanel();
+        draw();
+      }
     }
   });
 
   document.addEventListener('pointerlockchange', () => {
     pointerLocked = document.pointerLockElement === renderer!.domElement;
-    if (container) container.style.cursor = pointerLocked ? 'none' : 'crosshair';
+    if (container) container.style.cursor = pointerLocked ? 'none' : 'default';
+    if (crosshairEl) crosshairEl.style.display = pointerLocked ? '' : 'none';
   });
 
   document.addEventListener('mousemove', (e: MouseEvent) => {
-    if (!pointerLocked || !isActive) return;
-    yaw += e.movementX * MOUSE_SENS;
-    pitch -= e.movementY * MOUSE_SENS;
-    pitch = Math.max(-Math.PI * 0.47, Math.min(Math.PI * 0.47, pitch));
+    if (!isActive) return;
+    if (pointerLocked) {
+      yaw += e.movementX * MOUSE_SENS;
+      pitch -= e.movementY * MOUSE_SENS;
+      pitch = Math.max(-Math.PI * 0.47, Math.min(Math.PI * 0.47, pitch));
+    } else if (renderer) {
+      // Track mouse in NDC for unlocked raycasting
+      const rect = renderer.domElement.getBoundingClientRect();
+      unlockedMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      unlockedMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    }
   });
 
   renderer.domElement.addEventListener('contextmenu', (e: Event) => e.preventDefault());
   renderer.domElement.addEventListener('mousedown', (e: MouseEvent) => {
-    if (!pointerLocked) return;
-    // Left-click: exit pointer lock so user can edit properties panel
-    if (e.button === 0) {
-      document.exitPointerLock();
+    if (pointerLocked) {
+      // Left-click: exit pointer lock so user can select
+      if (e.button === 0) document.exitPointerLock();
+    } else {
+      // Right-click: re-enter pointer lock for FPS movement
+      if (e.button === 2) renderer!.domElement.requestPointerLock();
     }
   });
 
@@ -346,7 +392,7 @@ export function toggle3D(): void {
     lastTime = performance.now();
     animFrameId = requestAnimationFrame(animate);
     renderer!.domElement.requestPointerLock();
-    showToast('Left-click select | WASD move | Q/E up/down | Shift fast | C copy V paste | Tab to exit');
+    showToast('Left-click exit look | Right-click enter look | WASD move | Shift+click multi-select | Tab exit');
   } else {
     container!.style.display = 'none';
     canvas2d.style.display = '';
