@@ -558,6 +558,11 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     }
 
     if (e.key === ' ')      { setSpaceDown(true); setIsPanning(true); setPanStart({ mx: lastClientX, my: lastClientY, px: pan.x, py: pan.y }); e.preventDefault(); return; }
+    if (e.key === 'Enter' && tool === 'draw' && drawChain.length >= 3) {
+      const first = drawChain[0], last = drawChain[drawChain.length - 1];
+      if (!validateNewEdge(last.x, last.y, first.x, first.y)) { showToast('Closing edge would intersect'); return; }
+      completeSector(); return;
+    }
     if (e.key === 'Escape') { resetDraw(); setMultiSelected(new Set()); setBoxSelectStart(null); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (multiSelected.size > 0) { deleteMultiSelected(); } else { deleteSelected(); }
