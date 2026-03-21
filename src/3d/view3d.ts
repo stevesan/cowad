@@ -32,6 +32,11 @@ const mouse = new THREE.Vector2();
 let crosshairEl: HTMLElement | null = null;
 let unlockedMouse = new THREE.Vector2();
 
+// ── Crosshair highlight ──
+let highlightedMesh: THREE.Mesh | null = null;
+let highlightedOrigColor: THREE.Color | null = null;
+let highlightStartTime = 0;
+
 // ── Texture clipboard ──
 let copiedTexture: string | null = null;
 
@@ -333,6 +338,14 @@ function animate(time: number): void {
   const lookTarget = camera.position.clone().add(forward);
   camera.lookAt(lookTarget);
 
+  // Reset previous crosshair highlight
+  const prevHighlightMesh = highlightedMesh;
+  if (highlightedMesh && highlightedOrigColor) {
+    (highlightedMesh.material as THREE.MeshBasicMaterial).color.copy(highlightedOrigColor);
+    highlightedMesh = null;
+    highlightedOrigColor = null;
+  }
+
   // Continuously update selection from crosshair raycast
   if (pointerLocked) {
     mouse.set(0, 0);
@@ -352,6 +365,21 @@ function animate(time: number): void {
           setSelected({ type: newType, id: ud.entityId });
           setActiveSide(newSide);
           renderPanel();
+        }
+
+        // Highlight the surface under crosshair with a slow throb
+        if (!ud.billboard) {
+          const hitMesh = hits[0].object as THREE.Mesh;
+          if (hitMesh !== prevHighlightMesh) highlightStartTime = time;
+          const mat = hitMesh.material as THREE.MeshBasicMaterial;
+          highlightedOrigColor = mat.color.clone();
+          highlightedMesh = hitMesh;
+          const throb = 0.12 + 0.12 * Math.cos((time - highlightStartTime) * 0.004);
+          mat.color.setRGB(
+            highlightedOrigColor.r + throb,
+            highlightedOrigColor.g + throb,
+            highlightedOrigColor.b + throb,
+          );
         }
       }
     } else if (selected) {
