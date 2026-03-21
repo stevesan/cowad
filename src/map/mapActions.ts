@@ -1,5 +1,5 @@
 import { mapRef } from '../config/firebase';
-import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, triggerRenderPanel, triggerDraw } from '../state/appState';
+import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, mouseWorld, triggerRenderPanel, triggerDraw } from '../state/appState';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
 import { pointInPoly, polyArea } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
@@ -115,11 +115,14 @@ export function mergeVertices(): void {
 
   beginAction();
 
-  // Move B to midpoint
-  const midX = Math.round((vA.x + vB.x) / 2);
-  const midY = Math.round((vA.y + vB.y) / 2);
-  record(`map/vertices/${vidB}`, { ...vB }, { x: midX, y: midY });
-  mapRef('vertices').child(vidB).update({ x: midX, y: midY });
+  // Move B to whichever input vertex is closest to the cursor
+  const dA = Math.hypot(vA.x - mouseWorld.x, vA.y - mouseWorld.y);
+  const dB = Math.hypot(vB.x - mouseWorld.x, vB.y - mouseWorld.y);
+  const target = dA < dB ? vA : vB;
+  if (target !== vB) {
+    record(`map/vertices/${vidB}`, { ...vB }, { x: target.x, y: target.y });
+    mapRef('vertices').child(vidB).update({ x: target.x, y: target.y });
+  }
 
   // Delete the connecting linedef (and its sidedefs)
   deleteLinedef(connectingLid);
