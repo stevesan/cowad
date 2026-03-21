@@ -599,7 +599,9 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     setMultiSelected(new Set());
     setBoxSelectStart(null);
     document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
-    canvas.style.cursor = (t === 'select') ? 'default' : 'crosshair';
+    canvas.style.cursor = t === 'select' ? 'crosshair'
+      : t === 'draw' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z\' fill=\'white\' stroke=\'black\' stroke-width=\'.5\'/%3E%3C/svg%3E") 2 22, crosshair'
+      : 'crosshair';
     draw();
   }
 
