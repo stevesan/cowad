@@ -518,13 +518,20 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
 
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
-    const { sx, sy } = getCanvasXY(e);
-    const before = s2w(sx, sy);
-    const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
-    setZoom(Math.max(0.05, Math.min(32, zoom * factor)));
-    const after = s2w(sx, sy);
-    pan.x += (after.x - before.x) * zoom;
-    pan.y -= (after.y - before.y) * zoom;
+    if (e.shiftKey) {
+      // Shift+scroll: zoom
+      const { sx, sy } = getCanvasXY(e);
+      const before = s2w(sx, sy);
+      const factor = e.deltaY < 0 ? 1.075 : 1 / 1.075;
+      setZoom(Math.max(0.05, Math.min(32, zoom * factor)));
+      const after = s2w(sx, sy);
+      pan.x += (after.x - before.x) * zoom;
+      pan.y -= (after.y - before.y) * zoom;
+    } else {
+      // Two-finger scroll: pan
+      pan.x -= e.deltaX * 1.5;
+      pan.y -= e.deltaY * 1.5;
+    }
     draw();
   }, { passive: false });
 }
