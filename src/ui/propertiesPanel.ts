@@ -36,13 +36,13 @@ export function renderPanel(): void {
   }
   function texField(label: string, path: string, val: string | undefined, texType: 'flat' | 'wall'): string {
     const v = val ?? '';
-    const preview = isWadLoaded() && getTextureDataUrl(v)
-      ? `<img class="tex-preview" src="${getTextureDataUrl(v)}" width="24" height="24">`
-      : '';
+    const dataUrl = isWadLoaded() ? getTextureDataUrl(v) : null;
+    const preview = dataUrl
+      ? `<img class="tex-preview tex-clickable" src="${dataUrl}" width="24" height="24" data-path="${path}" data-tex-type="${texType}">`
+      : `<span class="tex-clickable tex-placeholder" data-path="${path}" data-tex-type="${texType}"></span>`;
     return `<div class="prop-row"><label>${label}</label>
       ${preview}
-      <input type="text" data-path="${path}" value="${esc(v)}">
-      <button class="tex-browse-btn" data-path="${path}" data-tex-type="${texType}">...</button></div>`;
+      <span class="tex-name tex-clickable" data-path="${path}" data-tex-type="${texType}">${esc(v) || '—'}</span></div>`;
   }
   function chkField(label: string, bitmaskPath: string, bit: number, flags: number): string {
     const checked = (flags & bit) ? 'checked' : '';
@@ -136,18 +136,24 @@ export function renderPanel(): void {
     });
   });
 
-  pContent.querySelectorAll<HTMLButtonElement>('.tex-browse-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const path = btn.dataset.path!;
-      const texType = btn.dataset.texType as 'flat' | 'wall';
-      const input = pContent.querySelector<HTMLInputElement>(`[data-path="${path}"]`)!;
+  pContent.querySelectorAll<HTMLElement>('.tex-clickable').forEach(el => {
+    el.addEventListener('click', () => {
+      const path = el.dataset.path!;
+      const texType = el.dataset.texType as 'flat' | 'wall';
+      const [c, i, f] = path.split('/');
+      const currentVal = (maps[c]?.get(i) as any)?.[f] ?? '';
       openTextureBrowser({
         filter: texType,
-        currentValue: input.value,
+        currentValue: currentVal,
         onSelect: (name) => {
-          input.value = name;
-          input.dispatchEvent(new Event('change'));
-          renderPanel(); // refresh preview
+          const entity = maps[c]?.get(i);
+          if (entity) {
+            beginAction();
+            record(`map/${c}/${i}`, { ...entity }, { ...entity, [f]: name });
+            endAction();
+          }
+          mapRef(c).child(i).update({ [f]: name });
+          renderPanel();
         },
       });
     });

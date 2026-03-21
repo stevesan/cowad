@@ -89,6 +89,13 @@ canvas { display: block; width: 100%; height: 100%; }
                   cursor: pointer; font-size: 11px; font-family: monospace; border-radius: 2px; flex-shrink: 0; }
 .tex-browse-btn:hover { background: #3a3a3a; color: #fff; }
 .tex-preview { flex-shrink: 0; border: 1px solid #333; image-rendering: pixelated; }
+.tex-clickable { cursor: pointer; }
+.tex-clickable:hover { opacity: 0.8; }
+.tex-name { color: #aaa; font-size: 11px; font-family: monospace; flex: 1; min-width: 0;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tex-name:hover { color: #fff; }
+.tex-placeholder { display: inline-block; width: 24px; height: 24px; background: #222;
+                   border: 1px dashed #444; flex-shrink: 0; }
 
 /* ── Thing Browser ── */
 .thing-cat-header { grid-column: 1 / -1; font-size: 11px; color: #888; text-transform: uppercase;
