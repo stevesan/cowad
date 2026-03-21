@@ -1,6 +1,7 @@
 import { maps, selected, hovered, tool, mouseWorld, zoom, drawPoints, multiSelected, multiSelectType, boxSelectStart } from '../state/appState';
-import { GRID, THINGS, CAT_COLOR } from '../config/constants';
+import { GRID, THINGS, CAT_COLOR, THING_SPRITE } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
+import { getSpritePrefixEntry, isWadLoaded } from '../wad/textureLoader';
 import { buildSectorPoly, buildSectorPolys } from '../geometry/cycleFinder';
 import { nearestVertex } from '../geometry/hitTest';
 
@@ -130,26 +131,60 @@ function drawVertices(): void {
   });
 }
 
+const spriteImgCache = new Map<string, HTMLImageElement>();
+
+function getSpriteImg(prefix: string): HTMLImageElement | null {
+  if (spriteImgCache.has(prefix)) return spriteImgCache.get(prefix)!;
+  const entry = getSpritePrefixEntry(prefix);
+  if (!entry) return null;
+  const img = new Image();
+  img.src = entry.dataUrl;
+  img.onload = () => draw();
+  spriteImgCache.set(prefix, img);
+  return img;
+}
+
 function drawThings(): void {
   maps.things.forEach((th, tid) => {
     const s    = w2s(th.x, th.y);
     const info = THINGS[th.type] || { r: 16, cat: 'player' };
     const r    = Math.max(info.r * zoom, 4);
+    const boxSize = r * 2;
     const isSel = selected && selected.type === 'thing' && selected.id === tid;
     const isHov = hovered  && hovered.type  === 'thing' && hovered.id  === tid;
+    const color = isSel ? '#ff0' : isHov ? '#fff' : (CAT_COLOR[info.cat] || '#fff');
+
+    // Hover glow
     if (isHov && !isSel) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
       ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(s.x, s.y, 24, 0, Math.PI * 2); ctx.stroke();
     }
-    ctx.strokeStyle = isSel ? '#ff0' : isHov ? '#fff' : (CAT_COLOR[info.cat] || '#fff');
-    ctx.lineWidth   = isSel ? 2 : isHov ? 2 : 1;
-    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.stroke();
-    const ang = ((th.angle ?? 0) * Math.PI) / 180;
-    ctx.beginPath();
-    ctx.moveTo(s.x, s.y);
-    ctx.lineTo(s.x + Math.cos(ang) * r, s.y - Math.sin(ang) * r);
-    ctx.stroke();
+
+    // Sprite inside box
+    const prefix = THING_SPRITE[th.type];
+    const img = prefix && isWadLoaded() ? getSpriteImg(prefix) : null;
+    if (img && img.complete && img.naturalWidth > 0) {
+      const scale = Math.min(boxSize / img.naturalWidth, boxSize / img.naturalHeight);
+      const dw = img.naturalWidth * scale;
+      const dh = img.naturalHeight * scale;
+      ctx.drawImage(img, s.x - dw / 2, s.y - dh / 2, dw, dh);
+    }
+
+    if (tool === 'thing' || isSel || isHov) {
+      // Box outline at real radius
+      ctx.strokeStyle = color;
+      ctx.lineWidth = isSel ? 2 : isHov ? 2 : 1;
+      ctx.strokeRect(s.x - r, s.y - r, boxSize, boxSize);
+
+      // Angle indicator
+      const ang = ((th.angle ?? 0) * Math.PI) / 180;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(s.x + Math.cos(ang) * r, s.y - Math.sin(ang) * r);
+      ctx.stroke();
+    }
   });
 }
 
