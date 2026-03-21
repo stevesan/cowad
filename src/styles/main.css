@@ -14,8 +14,11 @@ body { background: #111; color: #ccc; font-family: monospace; font-size: 12px;
 #clear-btn { background: #2a1a1a; border: 1px solid #633; color: #f88; padding: 3px 10px;
              cursor: pointer; border-radius: 3px; font-size: 12px; }
 #clear-btn:hover { background: #4a2a2a; }
-#thing-type-btn { display: inline-flex; align-items: center; max-width: 180px; overflow: hidden;
-                  text-overflow: ellipsis; white-space: nowrap; }
+.thing-btn { background: #2a2a2a; border: 1px solid #444; color: #999; padding: 3px 10px;
+             cursor: pointer; border-radius: 3px; font-size: 12px; font-family: monospace;
+             display: inline-flex; align-items: center; max-width: 180px; overflow: hidden;
+             text-overflow: ellipsis; white-space: nowrap; }
+.thing-btn:hover { background: #3a3a3a; color: #fff; }
 #coords { color: #555; margin-left: auto; min-width: 80px; text-align: right; }
 #users  { color: #555; font-size: 11px; }
 #status { padding: 2px 8px; border-radius: 8px; font-size: 11px; background: #222; color: #666; }
