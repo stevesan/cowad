@@ -518,7 +518,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
 
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
-    if (e.shiftKey) {
+    if (e.ctrlKey || e.metaKey) {
       // Shift+scroll: zoom
       const { sx, sy } = getCanvasXY(e);
       const before = s2w(sx, sy);
