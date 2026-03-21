@@ -420,6 +420,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       if (vid !== null && e.shiftKey) {
         // Shift+click: toggle vertex in multiSelected
         const next = multiSelectType === 'vertex' ? new Set(multiSelected) : new Set<string>();
+        if (selected?.type === 'vertex' && !next.has(selected.id)) next.add(selected.id);
         if (next.has(vid)) next.delete(vid);
         else next.add(vid);
         setMultiSelected(next, 'vertex');
@@ -479,10 +480,10 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
           else next.add(sectorHit);
           setMultiSelected(next, 'sector');
           setSelected(null); renderPanel();
-        } else if (sectorHit !== null && multiSelectType === 'sector' && multiSelected.has(sectorHit)) {
-          // Drag multi-selected sectors
+        } else if (sectorHit !== null && e.ctrlKey && multiSelectType === 'sector' && multiSelected.has(sectorHit)) {
+          // Ctrl+drag multi-selected sectors
           startVertexDrag(collectVerticesForSectors(multiSelected), wx, wy);
-        } else if (sectorHit !== null && !e.shiftKey) {
+        } else if (sectorHit !== null && e.ctrlKey) {
           setMultiSelected(new Set());
           select('sector', sectorHit);
           startVertexDrag(collectVerticesForSectors([sectorHit]), wx, wy);
@@ -531,7 +532,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         maps.vertices.forEach((v, vid) => {
           if (v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY) sel.add(vid);
         });
-        setMultiSelected(sel);
+        setMultiSelected(sel, 'vertex');
       }
       draw();
       return;
