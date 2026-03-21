@@ -41,6 +41,43 @@ let multiDragAnchorId: string | null = null;
 let boxSelectAdditive = false;
 let lastClientX = 0, lastClientY = 0;
 
+function collectVerticesForLinedefs(lids: Iterable<string>): Set<string> {
+  const verts = new Set<string>();
+  for (const lid of lids) {
+    const ld = maps.linedefs.get(lid);
+    if (ld) { verts.add(ld.v1); verts.add(ld.v2); }
+  }
+  return verts;
+}
+
+function collectVerticesForSectors(sids: Iterable<string>): Set<string> {
+  const verts = new Set<string>();
+  for (const sid of sids) {
+    for (const loop of buildSectorLoopIds(sid)) {
+      for (const vid of loop) verts.add(vid);
+    }
+  }
+  return verts;
+}
+
+function startVertexDrag(vertexIds: Set<string>, wx: number, wy: number): void {
+  multiDragOrigins = new Map();
+  let closestVid: string | null = null;
+  let closestDist = Infinity;
+  for (const vid of vertexIds) {
+    const v = maps.vertices.get(vid);
+    if (!v) continue;
+    multiDragOrigins.set(vid, { x: v.x, y: v.y });
+    const d = Math.hypot(v.x - wx, v.y - wy);
+    if (d < closestDist) { closestDist = d; closestVid = vid; }
+  }
+  if (closestVid) {
+    multiDragAnchorId = closestVid;
+    const anchorV = maps.vertices.get(closestVid)!;
+    dragOffset = { x: anchorV.x - wx, y: anchorV.y - wy };
+  }
+}
+
 // ── Draw tool state ──
 let drawChain: DrawVertex[] = [];
 
@@ -417,10 +454,14 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         else next.add(lid);
         setMultiSelected(next, 'linedef');
         setSelected(null); renderPanel();
+      } else if (lid !== null && multiSelectType === 'linedef' && multiSelected.has(lid)) {
+        // Drag multi-selected linedefs
+        startVertexDrag(collectVerticesForLinedefs(multiSelected), wx, wy);
       } else if (lid !== null) {
         setMultiSelected(new Set());
         setActiveSide(linedefSide(lid, wx, wy));
         select('linedef', lid);
+        startVertexDrag(collectVerticesForLinedefs([lid]), wx, wy);
       } else {
         // Check for sector under cursor
         let sectorHit: string | null = null;
@@ -438,9 +479,13 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
           else next.add(sectorHit);
           setMultiSelected(next, 'sector');
           setSelected(null); renderPanel();
+        } else if (sectorHit !== null && multiSelectType === 'sector' && multiSelected.has(sectorHit)) {
+          // Drag multi-selected sectors
+          startVertexDrag(collectVerticesForSectors(multiSelected), wx, wy);
         } else if (sectorHit !== null && !e.shiftKey) {
           setMultiSelected(new Set());
           select('sector', sectorHit);
+          startVertexDrag(collectVerticesForSectors([sectorHit]), wx, wy);
         } else {
           // Start box select (works on empty space)
           boxSelectAdditive = e.shiftKey;
