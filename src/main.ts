@@ -1,7 +1,7 @@
 import './styles/main.css';
 import './config/firebase';
-import { db } from './config/firebase';
-import { pan, setCallbacks } from './state/appState';
+import { db, mapRef } from './config/firebase';
+import { maps, pan, zoom, setZoom, setCallbacks } from './state/appState';
 import { initRenderer, draw } from './canvas/renderer';
 import { renderPanel } from './ui/propertiesPanel';
 import { initCanvasInput, initKeyboard } from './ui/canvasInput';
@@ -38,3 +38,27 @@ resize();
 pan.x = canvas.width  / 2;
 pan.y = canvas.height / 2;
 draw();
+
+// After initial data loads, zoom to fit all geometry
+mapRef('vertices').once('value', () => {
+  setTimeout(() => {
+    if (maps.vertices.size === 0) return;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    maps.vertices.forEach(v => {
+      if (v.x < minX) minX = v.x;
+      if (v.x > maxX) maxX = v.x;
+      if (v.y < minY) minY = v.y;
+      if (v.y > maxY) maxY = v.y;
+    });
+    const padding = 80;
+    const w = maxX - minX || 1;
+    const h = maxY - minY || 1;
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const fitZoom = Math.min((canvas.width - padding * 2) / w, (canvas.height - padding * 2) / h);
+    setZoom(Math.max(0.05, Math.min(32, fitZoom)));
+    pan.x = canvas.width / 2 - cx * zoom;
+    pan.y = canvas.height / 2 + cy * zoom;
+    draw();
+  }, 100);
+});
