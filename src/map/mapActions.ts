@@ -1,5 +1,5 @@
 import { mapRef } from '../config/firebase';
-import { maps, selected, setSelected, multiSelected, setMultiSelected, triggerRenderPanel, triggerDraw } from '../state/appState';
+import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, triggerRenderPanel, triggerDraw } from '../state/appState';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
 import { pointInPoly, polyArea } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
@@ -143,6 +143,68 @@ export function mergeVertices(): void {
 
   setMultiSelected(new Set([vidB]));
   setSelected({ type: 'vertex', id: vidB });
+  triggerRenderPanel();
+  triggerDraw();
+}
+
+export function mergeSectors(): void {
+  if (multiSelectType !== 'sector' || multiSelected.size < 2) {
+    showToast('Select 2 or more sectors to merge');
+    return;
+  }
+
+  const sids = [...multiSelected];
+  const keepSid = sids[sids.length - 1]; // keep the last selected
+  const removeSids = new Set(sids.slice(0, -1));
+
+  beginAction();
+
+  // Repoint all sidedefs referencing removed sectors to the kept sector
+  maps.sidedefs.forEach((sd, sdid) => {
+    if (sd.sector && removeSids.has(sd.sector)) {
+      record(`map/sidedefs/${sdid}`, { ...sd }, { ...sd, sector: keepSid });
+      mapRef('sidedefs').child(sdid).update({ sector: keepSid });
+    }
+  });
+
+  // Delete linedefs where both sides now reference the same sector (internal boundaries)
+  // Collect first since we modify during iteration
+  const toDelete: string[] = [];
+  maps.linedefs.forEach((ld, lid) => {
+    if (!ld.frontSide || !ld.backSide) return;
+    const frontSd = maps.sidedefs.get(ld.frontSide);
+    const backSd = maps.sidedefs.get(ld.backSide);
+    if (frontSd?.sector === keepSid && backSd?.sector === keepSid) {
+      toDelete.push(lid);
+    }
+  });
+  for (const lid of toDelete) {
+    deleteLinedef(lid);
+  }
+
+  // Remove orphaned vertices (connected to no linedefs)
+  const usedVerts = new Set<string>();
+  maps.linedefs.forEach(ld => { usedVerts.add(ld.v1); usedVerts.add(ld.v2); });
+  maps.vertices.forEach((v, vid) => {
+    if (!usedVerts.has(vid)) {
+      record(`map/vertices/${vid}`, { ...v }, null);
+      mapRef('vertices').child(vid).remove();
+    }
+  });
+
+  // Delete the removed sectors
+  for (const sid of removeSids) {
+    const sec = maps.sectors.get(sid);
+    if (sec) {
+      record(`map/sectors/${sid}`, { ...sec }, null);
+      mapRef('sectors').child(sid).remove();
+    }
+  }
+
+  endAction();
+
+  setMultiSelected(new Set());
+  setSelected({ type: 'sector', id: keepSid });
   triggerRenderPanel();
   triggerDraw();
 }

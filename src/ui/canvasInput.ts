@@ -10,7 +10,7 @@ import { s2w, snap } from '../canvas/transforms';
 import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
 import { findSectorsContainingBothVertices, anyBoundaryContainsBoth } from '../state/indices';
-import { placeThing, deleteSelected, deleteMultiSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint, mergeVertices } from '../map/mapActions';
+import { placeThing, deleteSelected, deleteMultiSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint, mergeVertices, mergeSectors } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
@@ -634,7 +634,11 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
       if (multiSelected.size > 0) { deleteMultiSelected(); } else { deleteSelected(); }
       return;
     }
-    if (e.key.toLowerCase() === 'm' && tool === 'select') { mergeVertices(); return; }
+    if (e.key.toLowerCase() === 'm' && tool === 'select') {
+      if (multiSelectType === 'sector') mergeSectors();
+      else mergeVertices();
+      return;
+    }
     if (e.key === 'Tab') {
       e.preventDefault();
       toggle3D();
