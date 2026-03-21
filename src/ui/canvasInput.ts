@@ -576,7 +576,12 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
       return;
     }
     if (!is3DActive()) {
-      const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', t: 'thing' };
+      if (e.key.toLowerCase() === 's') {
+        const lid = nearestLinedef(mouseWorld.x, mouseWorld.y);
+        if (lid !== null) { splitLinedefAtPoint(lid, snap(mouseWorld.x), snap(mouseWorld.y)); draw(); }
+        return;
+      }
+      const keyMap: Record<string, ToolType> = { d: 'draw', t: 'thing' };
       const mapped = keyMap[e.key.toLowerCase()];
       if (mapped) doSetTool(mapped);
     }
