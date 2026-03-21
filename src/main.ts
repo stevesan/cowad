@@ -40,7 +40,7 @@ pan.y = canvas.height / 2;
 draw();
 
 // After initial data loads, zoom to fit all geometry
-mapRef('vertices').once('value', () => {
+mapRef('vertices').once('value').then(() => {
   setTimeout(() => {
     if (maps.vertices.size === 0) return;
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;

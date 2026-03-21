@@ -400,8 +400,8 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       const tid = nearestThing(wx, wy);
       const lid = nearestLinedef(wx, wy);
 
-      if (vid !== null && e.ctrlKey) {
-        // Ctrl+click: toggle vertex in multiSelected
+      if (vid !== null && e.shiftKey) {
+        // Shift+click: toggle vertex in multiSelected
         const next = new Set(multiSelected);
         if (next.has(vid)) next.delete(vid);
         else next.add(vid);
@@ -435,7 +435,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         select('linedef', lid);
       } else {
         // Start box select (works on empty space and over sectors)
-        boxSelectAdditive = e.ctrlKey;
+        boxSelectAdditive = e.shiftKey;
         if (!boxSelectAdditive) setMultiSelected(new Set());
         setSelected(null); renderPanel();
         setBoxSelectStart({ x: wx, y: wy });
