@@ -116,6 +116,7 @@ function ensureInit(): void {
   // ── Event listeners ──
 
   renderer.domElement.addEventListener('click', (e: MouseEvent) => {
+    if (justUnlocked) { justUnlocked = false; return; }
     if (!pointerLocked) {
       // Unlocked: raycast from cursor to select/shift-select
       raycaster.setFromCamera(unlockedMouse, camera);
@@ -155,8 +156,11 @@ function ensureInit(): void {
     }
   });
 
+  let justUnlocked = false;
   document.addEventListener('pointerlockchange', () => {
+    const wasLocked = pointerLocked;
     pointerLocked = document.pointerLockElement === renderer!.domElement;
+    if (wasLocked && !pointerLocked) justUnlocked = true;
     if (container) container.style.cursor = pointerLocked ? 'none' : 'default';
     if (crosshairEl) crosshairEl.style.display = pointerLocked ? '' : 'none';
   });
@@ -178,8 +182,8 @@ function ensureInit(): void {
   renderer.domElement.addEventListener('contextmenu', (e: Event) => e.preventDefault());
   renderer.domElement.addEventListener('mousedown', (e: MouseEvent) => {
     if (pointerLocked) {
-      // Left-click: exit pointer lock so user can select
-      if (e.button === 0) document.exitPointerLock();
+      // Left-click or right-click: exit pointer lock so user can select
+      if (e.button === 0 || e.button === 2) document.exitPointerLock();
     } else {
       // Right-click: re-enter pointer lock for FPS movement
       if (e.button === 2) renderer!.domElement.requestPointerLock();
@@ -236,7 +240,7 @@ function ensureInit(): void {
         openTextureBrowser({
           filter: texType,
           currentValue: currentTex,
-          onSelect: (name) => { pasteTextureToHit(ud, name); },
+          onSelect: (name) => { pasteTextureToHit(ud, name); renderer!.domElement.requestPointerLock(); },
         });
       }
     }
