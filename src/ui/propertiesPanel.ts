@@ -112,6 +112,7 @@ export function renderPanel(): void {
           + numField('Light',     p('light'),    entity.light)
           + numField('Special',   p('special'),  entity.special)
           + numField('Tag',       p('tag'),      entity.tag);
+    html += `<button class="door-btn" id="door-btn">Create Door</button>`;
 
   } else if (type === 'thing') {
     const p = (f: string) => `things/${id}/${f}`;
@@ -201,6 +202,118 @@ export function renderPanel(): void {
   });
 
   document.getElementById('del-btn')!.addEventListener('click', deleteSelected);
+  document.getElementById('door-btn')?.addEventListener('click', () => {
+    if (selected?.type === 'sector') showDoorModal(selected.id);
+  });
+}
+
+// ── Door modal ──
+
+const DOOR_TYPES: { value: number; label: string }[] = [
+  { value: 1,  label: 'Standard Door (open/close)' },
+  { value: 31, label: 'Door (stays open)' },
+  { value: 26, label: 'Blue Key Door' },
+  { value: 27, label: 'Yellow Key Door' },
+  { value: 28, label: 'Red Key Door' },
+  { value: 32, label: 'Blue Key Door (stays open)' },
+  { value: 33, label: 'Yellow Key Door (stays open)' },
+  { value: 34, label: 'Red Key Door (stays open)' },
+];
+
+function showDoorModal(sectorId: string): void {
+  let modal = document.getElementById('door-modal');
+  if (modal) modal.remove();
+
+  modal = document.createElement('div');
+  modal.id = 'door-modal';
+  modal.className = 'tex-modal-overlay';
+  modal.innerHTML = `
+    <div class="door-modal-content">
+      <div class="panel-title" style="margin-bottom:12px;">Create Door</div>
+      <div class="prop-row"><label>Type</label>
+        <select id="door-type">
+          ${DOOR_TYPES.map(d => `<option value="${d.value}">${d.label}</option>`).join('')}
+        </select>
+      </div>
+      <div class="prop-row"><label>Door Texture</label>
+        <input type="text" id="door-track" value="BIGDOOR2">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+        <button id="door-cancel" class="del-btn" style="background:#333;">Cancel</button>
+        <button id="door-ok" class="del-btn" style="background:#2a6e2a;">OK</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+
+  modal.addEventListener('click', e => { if (e.target === modal) modal!.remove(); });
+  modal.addEventListener('keydown', e => {
+    if (e.key === 'Escape') modal!.remove();
+    e.stopPropagation();
+  });
+  modal.addEventListener('keyup', e => e.stopPropagation());
+  document.getElementById('door-cancel')!.addEventListener('click', () => modal!.remove());
+  document.getElementById('door-ok')!.addEventListener('click', () => {
+    const doorType = parseInt((document.getElementById('door-type') as HTMLSelectElement).value, 10);
+    const doorTex = (document.getElementById('door-track') as HTMLInputElement).value.trim() || 'BIGDOOR2';
+    applyDoor(sectorId, doorType, doorTex);
+    modal!.remove();
+  });
+
+  (document.getElementById('door-type') as HTMLSelectElement).focus();
+}
+
+function applyDoor(sectorId: string, doorType: number, doorTex: string): void {
+  const sec = maps.sectors.get(sectorId);
+  if (!sec) return;
+
+  beginAction();
+
+  // Set sector ceiling = floor (closed door)
+  const floorH = sec.floor ?? 0;
+  record(`map/sectors/${sectorId}`, { ...sec }, { ...sec, ceiling: floorH });
+  mapRef('sectors').child(sectorId).update({ ceiling: floorH });
+
+  // Find all two-sided linedefs bordering this sector
+  maps.linedefs.forEach((ld, lid) => {
+    if (!ld.frontSide || !ld.backSide) return;
+    const frontSd = maps.sidedefs.get(ld.frontSide);
+    const backSd = maps.sidedefs.get(ld.backSide);
+    if (!frontSd || !backSd) return;
+
+    const frontIsDoor = frontSd.sector === sectorId;
+    const backIsDoor = backSd.sector === sectorId;
+    if (!frontIsDoor && !backIsDoor) return;
+
+    const oldLd = { ...ld };
+    const newFlags = (ld.flags || 0) | 16; // add upper unpeg
+
+    if (frontIsDoor) {
+      // Front side faces door sector — flip linedef so front faces adjacent sector
+      // (DOOM DR doors only activate from the front side)
+      const newLd = {
+        ...oldLd,
+        v1: ld.v2, v2: ld.v1,
+        frontSide: ld.backSide, backSide: ld.frontSide,
+        special: doorType, flags: newFlags,
+      };
+      record(`map/linedefs/${lid}`, oldLd, newLd);
+      mapRef('linedefs').child(lid).update(newLd);
+    } else {
+      record(`map/linedefs/${lid}`, oldLd, { ...oldLd, special: doorType, flags: newFlags });
+      mapRef('linedefs').child(lid).update({ special: doorType, flags: newFlags });
+    }
+
+    // Set door texture on the sidedef referencing the adjacent (non-door) sector
+    // After any flip, this is always the front sidedef
+    const adjSdId = frontIsDoor ? ld.backSide! : ld.frontSide!;
+    const adjSd = maps.sidedefs.get(adjSdId)!;
+    const oldSd = { ...adjSd };
+    record(`map/sidedefs/${adjSdId}`, oldSd, { ...oldSd, upper: doorTex });
+    mapRef('sidedefs').child(adjSdId).update({ upper: doorTex });
+  });
+
+  endAction();
+  renderPanel();
 }
 
 function renderMultiSectorPanel(pContent: HTMLElement): void {
