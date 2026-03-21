@@ -22,7 +22,7 @@ export let mouseWorld: Point   = { x: 0, y: 0 };
 export let hovered: Selection | null = null;
 export let drawPoints: Point[] = [];
 export let multiSelected: Set<string> = new Set();
-export let multiSelectType: 'vertex' | 'sector' | null = null;
+export let multiSelectType: 'vertex' | 'sector' | 'linedef' | null = null;
 export let boxSelectStart: Point | null = null;
 export let snapSize: number = 8;
 export let activeSide: 'front' | 'back' | null = null;
@@ -37,7 +37,7 @@ export function setDragState(v: DragState | null): void { dragState = v; }
 export function setMouseWorld(v: Point): void    { mouseWorld = v; }
 export function setHovered(h: Selection | null): void { hovered = h; }
 export function setDrawPoints(v: Point[]): void  { drawPoints = v; }
-export function setMultiSelected(s: Set<string>, type?: 'vertex' | 'sector' | null): void { multiSelected = s; if (type !== undefined) multiSelectType = type; if (s.size === 0) multiSelectType = null; }
+export function setMultiSelected(s: Set<string>, type?: 'vertex' | 'sector' | 'linedef' | null): void { multiSelected = s; if (type !== undefined) multiSelectType = type; if (s.size === 0) multiSelectType = null; }
 export function setBoxSelectStart(p: Point | null): void { boxSelectStart = p; }
 export function setSnapSize(v: number): void { snapSize = v; }
 export function setActiveSide(s: 'front' | 'back' | null): void { activeSide = s; }

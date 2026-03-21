@@ -20,6 +20,12 @@ export function renderPanel(): void {
     return;
   }
 
+  if (multiSelectType === 'linedef' && multiSelected.size > 0) {
+    pEmpty.style.display = 'none'; pContent.style.display = '';
+    renderMultiLinedefPanel(pContent);
+    return;
+  }
+
   if (!selected) {
     pEmpty.style.display = ''; pContent.style.display = 'none'; pContent.innerHTML = ''; return;
   }
@@ -264,6 +270,160 @@ function renderMultiSectorPanel(pContent: HTMLElement): void {
             if (entity) {
               record(`map/sectors/${sid}`, { ...entity }, { ...entity, [field]: name });
               mapRef('sectors').child(sid).update({ [field]: name });
+            }
+          }
+          endAction();
+          renderPanel();
+        },
+      });
+    });
+  });
+
+  // Mouse wheel on number fields
+  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? snapSize : -snapSize;
+      el.value = String((parseFloat(el.value) || 0) + delta);
+      el.dispatchEvent(new Event('change'));
+    });
+  });
+
+  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+    el.addEventListener('focus', () => el.select());
+  });
+}
+
+function renderMultiLinedefPanel(pContent: HTMLElement): void {
+  const lids = [...multiSelected];
+  const linedefs = lids.map(lid => maps.linedefs.get(lid)).filter(Boolean) as any[];
+  if (linedefs.length === 0) return;
+
+  function commonVal(field: string): string | number | null {
+    const vals = linedefs.map(l => l[field]);
+    return vals.every(v => v === vals[0]) ? vals[0] : null;
+  }
+
+  // Collect all front/back sidedefs
+  const frontSids = lids.map(lid => maps.linedefs.get(lid)?.frontSide).filter(Boolean) as string[];
+  const backSids = lids.map(lid => maps.linedefs.get(lid)?.backSide).filter(Boolean) as string[];
+
+  function commonSideVal(sids: string[], field: string): string | null {
+    if (sids.length === 0) return null;
+    const vals = sids.map(sid => {
+      const sd = maps.sidedefs.get(sid);
+      return sd ? (sd as any)[field] : undefined;
+    });
+    return vals.every(v => v === vals[0]) ? vals[0] : null;
+  }
+
+  const special = commonVal('special');
+  const tag = commonVal('tag');
+  const flags = commonVal('flags');
+
+  function multiNumField(label: string, field: string, val: number | null, step = 1): string {
+    return `<div class="prop-row"><label>${label}</label>
+      <input type="number" data-multi-field="${field}" value="${val !== null ? val : ''}" step="${step}" placeholder="mixed"></div>`;
+  }
+
+  function multiChkField(label: string, bit: number, allFlags: number | null): string {
+    // If all share the same flags, show checked/unchecked; otherwise indeterminate
+    const checked = allFlags !== null && (allFlags & bit) ? 'checked' : '';
+    return `<div class="prop-row"><label>${label}</label>
+      <input type="checkbox" data-multi-bit="${bit}" ${checked}></div>`;
+  }
+
+  function multiSideTexField(label: string, field: string, sids: string[], texType: 'flat' | 'wall'): string {
+    if (sids.length === 0) return '';
+    const val = commonSideVal(sids, field);
+    const v = val ?? '';
+    const dataUrl = v && isWadLoaded() ? getTextureDataUrl(v) : null;
+    const preview = dataUrl
+      ? `<img class="tex-preview tex-clickable" src="${dataUrl}" width="24" height="24" data-side-field="${field}" data-side-type="${texType}" data-side-ids="${sids.join(',')}">`
+      : `<span class="tex-clickable tex-placeholder" data-side-field="${field}" data-side-type="${texType}" data-side-ids="${sids.join(',')}"></span>`;
+    return `<div class="prop-row"><label>${label}</label>
+      ${preview}
+      <span class="tex-name tex-clickable" data-side-field="${field}" data-side-type="${texType}" data-side-ids="${sids.join(',')}">${val ? esc(v) : 'mixed'}</span></div>`;
+  }
+
+  let html = `<div class="panel-title">linedefs <span style="color:#444">${lids.length} selected</span></div>`;
+  html += multiNumField('Special', 'special', special as number | null);
+  html += multiNumField('Tag', 'tag', tag as number | null);
+
+  html += `<div class="prop-section"><div class="panel-title">Flags</div>`;
+  for (const { bit, label } of FLAG_BITS)
+    html += multiChkField(label, bit, flags as number | null);
+  html += `</div>`;
+
+  if (frontSids.length > 0) {
+    html += `<div class="prop-section"><div class="panel-title">Front Sidedef</div>`;
+    html += multiSideTexField('Upper', 'upper', frontSids, 'wall');
+    html += multiSideTexField('Mid', 'mid', frontSids, 'wall');
+    html += multiSideTexField('Lower', 'lower', frontSids, 'wall');
+    html += `</div>`;
+  }
+  if (backSids.length > 0) {
+    html += `<div class="prop-section"><div class="panel-title">Back Sidedef</div>`;
+    html += multiSideTexField('Upper', 'upper', backSids, 'wall');
+    html += multiSideTexField('Mid', 'mid', backSids, 'wall');
+    html += multiSideTexField('Lower', 'lower', backSids, 'wall');
+    html += `</div>`;
+  }
+
+  pContent.innerHTML = html;
+
+  // Number field handlers
+  pContent.querySelectorAll<HTMLInputElement>('[data-multi-field]').forEach(el => {
+    el.addEventListener('change', () => {
+      const field = el.dataset.multiField!;
+      const val = parseFloat(el.value) || 0;
+      beginAction();
+      for (const lid of lids) {
+        const entity = maps.linedefs.get(lid);
+        if (entity) {
+          record(`map/linedefs/${lid}`, { ...entity }, { ...entity, [field]: val });
+          mapRef('linedefs').child(lid).update({ [field]: val });
+        }
+      }
+      endAction();
+    });
+  });
+
+  // Checkbox (flag) handlers
+  pContent.querySelectorAll<HTMLInputElement>('[data-multi-bit]').forEach(el => {
+    el.addEventListener('change', () => {
+      const bit = parseInt(el.dataset.multiBit!, 10);
+      beginAction();
+      for (const lid of lids) {
+        const entity = maps.linedefs.get(lid);
+        if (entity) {
+          const cur = entity.flags || 0;
+          const val = el.checked ? (cur | bit) : (cur & ~bit);
+          record(`map/linedefs/${lid}`, { ...entity }, { ...entity, flags: val });
+          mapRef('linedefs').child(lid).update({ flags: val });
+        }
+      }
+      endAction();
+    });
+  });
+
+  // Sidedef texture click handlers
+  pContent.querySelectorAll<HTMLElement>('.tex-clickable').forEach(el => {
+    el.addEventListener('click', () => {
+      const field = el.dataset.sideField!;
+      const texType = el.dataset.sideType as 'flat' | 'wall';
+      const sids = el.dataset.sideIds!.split(',');
+      const currentVal = commonSideVal(sids, field) ?? '';
+      openTextureBrowser({
+        filter: texType,
+        currentValue: currentVal,
+        onSelect: (name) => {
+          beginAction();
+          for (const sid of sids) {
+            const sd = maps.sidedefs.get(sid);
+            if (sd) {
+              record(`map/sidedefs/${sid}`, { ...sd }, { ...sd, [field]: name });
+              mapRef('sidedefs').child(sid).update({ [field]: name });
             }
           }
           endAction();

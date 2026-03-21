@@ -429,6 +429,14 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         setDragState({ type: 'thing', id: tid });
         const t = maps.things.get(tid);
         if (t) { dragOrigin = { ...t }; dragOffset = { x: t.x - wx, y: t.y - wy }; }
+      } else if (lid !== null && e.shiftKey) {
+        // Shift+click: toggle linedef in multiSelected
+        const next = multiSelectType === 'linedef' ? new Set(multiSelected) : new Set<string>();
+        if (selected?.type === 'linedef' && !next.has(selected.id)) next.add(selected.id);
+        if (next.has(lid)) next.delete(lid);
+        else next.add(lid);
+        setMultiSelected(next, 'linedef');
+        setSelected(null); renderPanel();
       } else if (lid !== null) {
         setMultiSelected(new Set());
         setActiveSide(linedefSide(lid, wx, wy));

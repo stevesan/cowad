@@ -119,13 +119,13 @@ function ensureInit(): void {
         const ud = hits[0].object.userData;
         if (ud.entityType && ud.entityId) {
           const hitType = ud.entityType === 'linedef' ? 'linedef' : ud.entityType === 'sector' ? 'sector' : null;
-          if (hitType === 'sector' && e.shiftKey) {
-            // Shift+click: multi-select sectors
-            const next = multiSelectType === 'sector' ? new Set(multiSelected) : new Set<string>();
-            if (selected?.type === 'sector' && !next.has(selected.id)) next.add(selected.id);
+          if ((hitType === 'sector' || hitType === 'linedef') && e.shiftKey) {
+            // Shift+click: multi-select sectors or linedefs
+            const next = multiSelectType === hitType ? new Set(multiSelected) : new Set<string>();
+            if (selected?.type === hitType && !next.has(selected.id)) next.add(selected.id);
             if (next.has(ud.entityId)) next.delete(ud.entityId);
             else next.add(ud.entityId);
-            setMultiSelected(next, 'sector');
+            setMultiSelected(next, hitType);
             setSelected(null);
             renderPanel();
           } else if (hitType) {

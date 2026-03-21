@@ -87,15 +87,16 @@ function drawLinedefs(): void {
     if (!v1 || !v2) return;
     const s1 = w2s(v1.x, v1.y), s2 = w2s(v2.x, v2.y);
     const isSel   = selected && selected.type === 'linedef' && selected.id === lid;
+    const isMultiSel = multiSelectType === 'linedef' && multiSelected.has(lid);
     const isHov   = hovered  && hovered.type  === 'linedef' && hovered.id  === lid;
     const twoSide = !!(ld.flags & 4);
-    if (isHov && !isSel) {
+    if (isHov && !isSel && !isMultiSel) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
       ctx.lineWidth = 8;
       ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
     }
-    ctx.strokeStyle = isSel ? '#ff0' : isHov ? '#fff' : twoSide ? '#aa0' : '#ddd';
-    ctx.lineWidth   = isSel ? 2 : isHov ? 2 : 1;
+    ctx.strokeStyle = (isSel || isMultiSel) ? '#ff0' : isHov ? '#fff' : twoSide ? '#aa0' : '#ddd';
+    ctx.lineWidth   = (isSel || isMultiSel) ? 2 : isHov ? 2 : 1;
     ctx.beginPath(); ctx.moveTo(s1.x, s1.y); ctx.lineTo(s2.x, s2.y); ctx.stroke();
     const mx = (s1.x + s2.x) / 2, my = (s1.y + s2.y) / 2;
     const dx = s2.x - s1.x,        dy = s2.y - s1.y;
