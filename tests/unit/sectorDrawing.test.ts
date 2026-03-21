@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { maps } from '../../src/state/appState';
+import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, rebuildIndices } from '../../src/state/indices';
 import type { DrawVertex } from '../../src/types';
 
 // ── Firebase mock ──
@@ -16,6 +17,10 @@ vi.mock('../../src/config/firebase', () => {
       if ((maps as any)[col]) {
         (maps as any)[col].set(key, { ...val });
       }
+      // Maintain reverse index for linedefs
+      if (col === 'linedefs' && val.v1 && val.v2) {
+        onLinedefAdded(key, val.v1, val.v2);
+      }
       // Return a thenable with .key accessible synchronously (like Firebase SDK)
       const result = Promise.resolve({ key }) as any;
       result.key = key;
@@ -27,12 +32,24 @@ vi.mock('../../src/config/firebase', () => {
         if ((maps as any)[col]) {
           const existing = (maps as any)[col].get(id);
           if (existing) {
+            // Maintain reverse index for linedefs
+            if (col === 'linedefs' && (val.v1 || val.v2)) {
+              onLinedefChanged(id, val.v1 || existing.v1, val.v2 || existing.v2, existing.v1, existing.v2);
+            }
             (maps as any)[col].set(id, { ...existing, ...val });
           }
         }
         return Promise.resolve();
       },
-      remove: () => Promise.resolve(),
+      remove: () => {
+        const col = basePath.replace('map/', '');
+        if (col === 'linedefs') {
+          const existing = (maps as any)[col]?.get(id);
+          if (existing) onLinedefRemoved(id, existing.v1, existing.v2);
+        }
+        if ((maps as any)[col]) (maps as any)[col].delete(id);
+        return Promise.resolve();
+      },
     }),
     set: () => Promise.resolve(),
     remove: () => Promise.resolve(),
@@ -74,6 +91,7 @@ function clearMaps() {
   maps.sidedefs.clear();
   maps.sectors.clear();
   maps.things.clear();
+  rebuildIndices();
   keyCounter = 0;
 }
 

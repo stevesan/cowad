@@ -9,6 +9,7 @@ import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
 import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
+import { findSectorsContainingBothVertices, anyBoundaryContainsBoth } from '../state/indices';
 import { placeThing, deleteSelected, deleteMultiSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint, mergeVertices } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
@@ -129,18 +130,10 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
     const last = drawChain[drawChain.length - 1];
     if (first.existingId && last.existingId && first.existingId !== last.existingId) {
       // Collect all sectors whose boundary loops contain both endpoints
-      const candidates: { sid: string; area: number }[] = [];
-      maps.sectors.forEach((_, sid) => {
-        const loops = buildSectorLoopIds(sid);
-        for (const loop of loops) {
-          if (loop.includes(first.existingId!) && loop.includes(last.existingId!)) {
-            const poly = buildSectorPoly(sid);
-            if (poly) candidates.push({ sid, area: polyArea(poly) });
-            break;
-          }
-        }
-      });
-      candidates.sort((a, b) => a.area - b.area);
+      const candidates = findSectorsContainingBothVertices(
+        first.existingId!, last.existingId!,
+        buildSectorLoopIds, buildSectorPoly, polyArea,
+      );
 
       // Determine split vs adjacent: a split has new chain vertices INSIDE the sector
       let splitSectorId: string | null = null;
@@ -260,20 +253,7 @@ function handleDrawClick(wx: number, wy: number): void {
     }
     // For non-split polygons, also validate closing edge (click → first)
     // For splits the closing edge runs along the sector boundary, not through free space
-    const isSplit = (() => {
-      let found = false;
-      maps.sectors.forEach((_, sid) => {
-        if (found) return;
-        const loops = buildSectorLoopIds(sid);
-        for (const loop of loops) {
-          if (loop.includes(first.existingId!) && loop.includes(clickExisting!)) {
-            found = true;
-            break;
-          }
-        }
-      });
-      return found;
-    })();
+    const isSplit = anyBoundaryContainsBoth(first.existingId!, clickExisting!, buildSectorLoopIds);
     if (!isSplit && !validateNewEdge(clickX, clickY, first.x, first.y)) {
       showToast('Closing edge would intersect'); return;
     }
