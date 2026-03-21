@@ -1,4 +1,4 @@
-import { maps, selected, activeSide, snapSize } from '../state/appState';
+import { maps, selected, activeSide, snapSize, multiSelected, multiSelectType } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { THINGS, FLAG_BITS } from '../config/constants';
 import { deleteSelected } from '../map/mapActions';
@@ -13,6 +13,12 @@ function esc(s: string | number | null | undefined): string {
 export function renderPanel(): void {
   const pEmpty   = document.getElementById('panel-empty')!;
   const pContent = document.getElementById('panel-content')!;
+
+  if (multiSelectType === 'sector' && multiSelected.size > 0) {
+    pEmpty.style.display = 'none'; pContent.style.display = '';
+    renderMultiSectorPanel(pContent);
+    return;
+  }
 
   if (!selected) {
     pEmpty.style.display = ''; pContent.style.display = 'none'; pContent.innerHTML = ''; return;
@@ -175,4 +181,109 @@ export function renderPanel(): void {
   });
 
   document.getElementById('del-btn')!.addEventListener('click', deleteSelected);
+}
+
+function renderMultiSectorPanel(pContent: HTMLElement): void {
+  const sids = [...multiSelected];
+  const sectors = sids.map(sid => maps.sectors.get(sid)).filter(Boolean) as any[];
+  if (sectors.length === 0) return;
+
+  // Find common values (show value if all match, otherwise "—")
+  function commonVal(field: string): string | number | null {
+    const vals = sectors.map(s => s[field]);
+    return vals.every(v => v === vals[0]) ? vals[0] : null;
+  }
+
+  const floor = commonVal('floor');
+  const ceiling = commonVal('ceiling');
+  const light = commonVal('light');
+  const special = commonVal('special');
+  const tag = commonVal('tag');
+  const floorTex = commonVal('floorTex');
+  const ceilTex = commonVal('ceilTex');
+
+  function multiNumField(label: string, field: string, val: number | null, step = 1): string {
+    const display = val !== null ? val : '';
+    return `<div class="prop-row"><label>${label}</label>
+      <input type="number" data-multi-field="${field}" value="${display}" step="${step}" placeholder="mixed"></div>`;
+  }
+
+  function multiTexField(label: string, field: string, val: string | null, texType: 'flat' | 'wall'): string {
+    const v = val ?? '';
+    const dataUrl = v && isWadLoaded() ? getTextureDataUrl(v) : null;
+    const preview = dataUrl
+      ? `<img class="tex-preview tex-clickable" src="${dataUrl}" width="24" height="24" data-multi-field="${field}" data-tex-type="${texType}">`
+      : `<span class="tex-clickable tex-placeholder" data-multi-field="${field}" data-tex-type="${texType}"></span>`;
+    return `<div class="prop-row"><label>${label}</label>
+      ${preview}
+      <span class="tex-name tex-clickable" data-multi-field="${field}" data-tex-type="${texType}">${val ? esc(v) : 'mixed'}</span></div>`;
+  }
+
+  let html = `<div class="panel-title">sectors <span style="color:#444">${sids.length} selected</span></div>`;
+  html += multiNumField('Floor H', 'floor', floor as number | null);
+  html += multiNumField('Ceil H', 'ceiling', ceiling as number | null);
+  html += multiTexField('Floor Tex', 'floorTex', floorTex as string | null, 'flat');
+  html += multiTexField('Ceil Tex', 'ceilTex', ceilTex as string | null, 'flat');
+  html += multiNumField('Light', 'light', light as number | null);
+  html += multiNumField('Special', 'special', special as number | null);
+  html += multiNumField('Tag', 'tag', tag as number | null);
+
+  pContent.innerHTML = html;
+
+  // Number field change handlers — apply to all selected sectors
+  pContent.querySelectorAll<HTMLInputElement>('[data-multi-field]').forEach(el => {
+    if (el.tagName !== 'INPUT') return;
+    el.addEventListener('change', () => {
+      const field = el.dataset.multiField!;
+      const val = (el.type === 'number') ? (parseFloat(el.value) || 0) : el.value;
+      beginAction();
+      for (const sid of sids) {
+        const entity = maps.sectors.get(sid);
+        if (entity) {
+          record(`map/sectors/${sid}`, { ...entity }, { ...entity, [field]: val });
+          mapRef('sectors').child(sid).update({ [field]: val });
+        }
+      }
+      endAction();
+    });
+  });
+
+  // Texture clickable handlers
+  pContent.querySelectorAll<HTMLElement>('.tex-clickable').forEach(el => {
+    el.addEventListener('click', () => {
+      const field = el.dataset.multiField!;
+      const texType = el.dataset.texType as 'flat' | 'wall';
+      const currentVal = (commonVal(field) as string) ?? '';
+      openTextureBrowser({
+        filter: texType,
+        currentValue: currentVal,
+        onSelect: (name) => {
+          beginAction();
+          for (const sid of sids) {
+            const entity = maps.sectors.get(sid);
+            if (entity) {
+              record(`map/sectors/${sid}`, { ...entity }, { ...entity, [field]: name });
+              mapRef('sectors').child(sid).update({ [field]: name });
+            }
+          }
+          endAction();
+          renderPanel();
+        },
+      });
+    });
+  });
+
+  // Mouse wheel on number fields
+  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+    el.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? snapSize : -snapSize;
+      el.value = String((parseFloat(el.value) || 0) + delta);
+      el.dispatchEvent(new Event('change'));
+    });
+  });
+
+  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+    el.addEventListener('focus', () => el.select());
+  });
 }

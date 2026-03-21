@@ -1,4 +1,4 @@
-import { maps, selected, hovered, tool, mouseWorld, zoom, drawPoints, multiSelected, boxSelectStart } from '../state/appState';
+import { maps, selected, hovered, tool, mouseWorld, zoom, drawPoints, multiSelected, multiSelectType, boxSelectStart } from '../state/appState';
 import { GRID, THINGS, CAT_COLOR } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
 import { buildSectorPoly, buildSectorPolys } from '../geometry/cycleFinder';
@@ -56,10 +56,11 @@ function drawSectors(): void {
     const loops = buildSectorPolys(sid);
     if (!loops.length) return;
     const isSel = selected && selected.type === 'sector' && selected.id === sid;
+    const isMultiSel = multiSelectType === 'sector' && multiSelected.has(sid);
     const isHov = hovered  && hovered.type  === 'sector' && hovered.id  === sid;
     const light = Math.max(0, Math.min(255, sec.light ?? 160));
     const c = Math.round(20 + (light / 255) * 70);
-    ctx.fillStyle = isSel
+    ctx.fillStyle = (isSel || isMultiSel)
       ? `rgba(${c + 40},${c + 30},${Math.round(c * 0.4)},0.7)`
       : isHov
       ? `rgba(${c + 20},${c + 20},${Math.round(c * 0.75) + 15},0.7)`
@@ -74,7 +75,7 @@ function drawSectors(): void {
       ctx.closePath();
     }
     ctx.fill('evenodd');
-    if (isSel) { ctx.strokeStyle = '#ff0'; ctx.lineWidth = 2; ctx.stroke(); }
+    if (isSel || isMultiSel) { ctx.strokeStyle = '#ff0'; ctx.lineWidth = 2; ctx.stroke(); }
     else if (isHov) { ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'; ctx.lineWidth = 1; ctx.stroke(); }
   });
 }

@@ -1,6 +1,6 @@
 import {
   maps, tool, selected, hovered, pan, zoom, isPanning, panStart,
-  spaceDown, dragState, mouseWorld, multiSelected, boxSelectStart, activeSide,
+  spaceDown, dragState, mouseWorld, multiSelected, multiSelectType, boxSelectStart, activeSide,
   setSelected, setHovered, setZoom, setIsPanning, setPanStart,
   setSpaceDown, setDragState, setMouseWorld, setTool, setDrawPoints,
   setMultiSelected, setBoxSelectStart, setActiveSide,
@@ -402,12 +402,12 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
 
       if (vid !== null && e.shiftKey) {
         // Shift+click: toggle vertex in multiSelected
-        const next = new Set(multiSelected);
+        const next = multiSelectType === 'vertex' ? new Set(multiSelected) : new Set<string>();
         if (next.has(vid)) next.delete(vid);
         else next.add(vid);
-        setMultiSelected(next);
+        setMultiSelected(next, 'vertex');
         setSelected(null); renderPanel();
-      } else if (vid !== null && multiSelected.size > 0 && multiSelected.has(vid)) {
+      } else if (vid !== null && multiSelectType === 'vertex' && multiSelected.size > 0 && multiSelected.has(vid)) {
         // Start multi-drag — anchor is the clicked vertex
         multiDragOrigins = new Map();
         for (const id of multiSelected) {
@@ -434,11 +434,32 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         setActiveSide(linedefSide(lid, wx, wy));
         select('linedef', lid);
       } else {
-        // Start box select (works on empty space and over sectors)
-        boxSelectAdditive = e.shiftKey;
-        if (!boxSelectAdditive) setMultiSelected(new Set());
-        setSelected(null); renderPanel();
-        setBoxSelectStart({ x: wx, y: wy });
+        // Check for sector under cursor
+        let sectorHit: string | null = null;
+        maps.sectors.forEach((_, sid) => {
+          const poly = buildSectorPoly(sid);
+          if (poly && pointInPoly(wx, wy, poly)) sectorHit = sid;
+        });
+
+        if (sectorHit !== null && e.shiftKey) {
+          // Shift+click: toggle sector in multiSelected
+          const next = multiSelectType === 'sector' ? new Set(multiSelected) : new Set<string>();
+          // Carry over single-selected sector into multi-selection
+          if (selected?.type === 'sector' && !next.has(selected.id)) next.add(selected.id);
+          if (next.has(sectorHit)) next.delete(sectorHit);
+          else next.add(sectorHit);
+          setMultiSelected(next, 'sector');
+          setSelected(null); renderPanel();
+        } else if (sectorHit !== null && !e.shiftKey) {
+          setMultiSelected(new Set());
+          select('sector', sectorHit);
+        } else {
+          // Start box select (works on empty space)
+          boxSelectAdditive = e.shiftKey;
+          if (!boxSelectAdditive) setMultiSelected(new Set());
+          setSelected(null); renderPanel();
+          setBoxSelectStart({ x: wx, y: wy });
+        }
       }
       draw();
 
