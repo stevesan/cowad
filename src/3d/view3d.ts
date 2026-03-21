@@ -361,13 +361,10 @@ function animate(time: number): void {
     }
   }
 
-  // Rotate billboards (things) to face camera, upright only
-  const billboardDir = new THREE.Vector3();
+  // Align billboards (things) with view plane (all face same direction)
+  const billboardDir = new THREE.Vector3(Math.sin(yaw), 0, -Math.cos(yaw));
   for (const obj of sceneGroup.children) {
     if (obj.userData.billboard) {
-      billboardDir.copy(camera.position).sub(obj.position);
-      billboardDir.y = 0;
-      billboardDir.normalize();
       obj.lookAt(obj.position.clone().add(billboardDir));
     }
   }
