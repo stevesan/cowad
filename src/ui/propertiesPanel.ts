@@ -10,6 +10,18 @@ function esc(s: string | number | null | undefined): string {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function evalMath(expr: string): number {
+  const s = expr.trim();
+  if (!s) return 0;
+  if (/^[\d+\-*/().  ]+$/.test(s)) {
+    try {
+      const r = new Function('return ' + s)();
+      if (typeof r === 'number' && isFinite(r)) return Math.round(r * 1000) / 1000;
+    } catch { /* fall through */ }
+  }
+  return parseFloat(s) || 0;
+}
+
 export function renderPanel(): void {
   const pEmpty   = document.getElementById('panel-empty')!;
   const pContent = document.getElementById('panel-content')!;
@@ -40,7 +52,7 @@ export function renderPanel(): void {
 
   function numField(label: string, path: string, val: number | undefined, step = 1): string {
     return `<div class="prop-row"><label>${label}</label>
-      <input type="number" data-path="${path}" value="${val ?? 0}" step="${step}"></div>`;
+      <input type="text" data-path="${path}" data-numeric data-step="${step}" value="${val ?? 0}"></div>`;
   }
   function txtField(label: string, path: string, val: string | undefined): string {
     return `<div class="prop-row"><label>${label}</label>
@@ -119,7 +131,9 @@ export function renderPanel(): void {
   pContent.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-path]').forEach(el => {
     el.addEventListener('change', () => {
       const [c, i, f] = el.dataset.path!.split('/');
-      const val = (el.type === 'number') ? (parseFloat(el.value) || 0)
+      const isNumeric = el.hasAttribute('data-numeric');
+      if (isNumeric) el.value = String(evalMath(el.value));
+      const val = isNumeric ? evalMath(el.value)
                 : (el.tagName === 'SELECT') ? (isNaN(Number(el.value)) ? el.value : +el.value)
                 : el.value;
       const entity = maps[c]?.get(i);
@@ -172,17 +186,17 @@ export function renderPanel(): void {
   });
 
   // Mouse wheel on number fields: increment/decrement by snap size
-  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+  pContent.querySelectorAll<HTMLInputElement>('input[data-numeric]').forEach(el => {
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
       const delta = e.deltaY < 0 ? snapSize : -snapSize;
-      el.value = String((parseFloat(el.value) || 0) + delta);
+      el.value = String(evalMath(el.value) + delta);
       el.dispatchEvent(new Event('change'));
     });
   });
 
   // Select all text on click for easy editing
-  pContent.querySelectorAll<HTMLInputElement>('input[type="text"], input[type="number"]').forEach(el => {
+  pContent.querySelectorAll<HTMLInputElement>('input[type="text"]').forEach(el => {
     el.addEventListener('focus', () => el.select());
   });
 
@@ -211,7 +225,7 @@ function renderMultiSectorPanel(pContent: HTMLElement): void {
   function multiNumField(label: string, field: string, val: number | null, step = 1): string {
     const display = val !== null ? val : '';
     return `<div class="prop-row"><label>${label}</label>
-      <input type="number" data-multi-field="${field}" value="${display}" step="${step}" placeholder="mixed"></div>`;
+      <input type="text" data-multi-field="${field}" data-numeric data-step="${step}" value="${display}" placeholder="mixed"></div>`;
   }
 
   function multiTexField(label: string, field: string, val: string | null, texType: 'flat' | 'wall'): string {
@@ -241,7 +255,9 @@ function renderMultiSectorPanel(pContent: HTMLElement): void {
     if (el.tagName !== 'INPUT') return;
     el.addEventListener('change', () => {
       const field = el.dataset.multiField!;
-      const val = (el.type === 'number') ? (parseFloat(el.value) || 0) : el.value;
+      const isNumeric = el.hasAttribute('data-numeric');
+      if (isNumeric) el.value = String(evalMath(el.value));
+      const val = isNumeric ? evalMath(el.value) : el.value;
       beginAction();
       for (const sid of sids) {
         const entity = maps.sectors.get(sid);
@@ -280,16 +296,16 @@ function renderMultiSectorPanel(pContent: HTMLElement): void {
   });
 
   // Mouse wheel on number fields
-  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+  pContent.querySelectorAll<HTMLInputElement>('input[data-numeric]').forEach(el => {
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
       const delta = e.deltaY < 0 ? snapSize : -snapSize;
-      el.value = String((parseFloat(el.value) || 0) + delta);
+      el.value = String(evalMath(el.value) + delta);
       el.dispatchEvent(new Event('change'));
     });
   });
 
-  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+  pContent.querySelectorAll<HTMLInputElement>('input[data-numeric]').forEach(el => {
     el.addEventListener('focus', () => el.select());
   });
 }
@@ -323,7 +339,7 @@ function renderMultiLinedefPanel(pContent: HTMLElement): void {
 
   function multiNumField(label: string, field: string, val: number | null, step = 1): string {
     return `<div class="prop-row"><label>${label}</label>
-      <input type="number" data-multi-field="${field}" value="${val !== null ? val : ''}" step="${step}" placeholder="mixed"></div>`;
+      <input type="text" data-multi-field="${field}" data-numeric data-step="${step}" value="${val !== null ? val : ''}" placeholder="mixed"></div>`;
   }
 
   function multiChkField(label: string, bit: number, allFlags: number | null): string {
@@ -376,7 +392,8 @@ function renderMultiLinedefPanel(pContent: HTMLElement): void {
   pContent.querySelectorAll<HTMLInputElement>('[data-multi-field]').forEach(el => {
     el.addEventListener('change', () => {
       const field = el.dataset.multiField!;
-      const val = parseFloat(el.value) || 0;
+      if (el.hasAttribute('data-numeric')) el.value = String(evalMath(el.value));
+      const val = evalMath(el.value);
       beginAction();
       for (const lid of lids) {
         const entity = maps.linedefs.get(lid);
@@ -434,16 +451,16 @@ function renderMultiLinedefPanel(pContent: HTMLElement): void {
   });
 
   // Mouse wheel on number fields
-  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+  pContent.querySelectorAll<HTMLInputElement>('input[data-numeric]').forEach(el => {
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
       const delta = e.deltaY < 0 ? snapSize : -snapSize;
-      el.value = String((parseFloat(el.value) || 0) + delta);
+      el.value = String(evalMath(el.value) + delta);
       el.dispatchEvent(new Event('change'));
     });
   });
 
-  pContent.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach(el => {
+  pContent.querySelectorAll<HTMLInputElement>('input[data-numeric]').forEach(el => {
     el.addEventListener('focus', () => el.select());
   });
 }
