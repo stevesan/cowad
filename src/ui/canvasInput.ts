@@ -571,10 +571,12 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     dragOrigin = null;
   });
 
+  const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+
   canvas.addEventListener('wheel', e => {
     e.preventDefault();
-    if (e.ctrlKey || e.metaKey) {
-      // Shift+scroll: zoom
+    const wantsZoom = e.ctrlKey || e.metaKey || (!isMac && !e.shiftKey);
+    if (wantsZoom) {
       const { sx, sy } = getCanvasXY(e);
       const before = s2w(sx, sy);
       const factor = e.deltaY < 0 ? 1.05625 : 1 / 1.05625;
@@ -583,7 +585,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       pan.x += (after.x - before.x) * zoom;
       pan.y -= (after.y - before.y) * zoom;
     } else {
-      // Two-finger scroll: pan
+      // Two-finger scroll / shift+scroll: pan
       pan.x -= e.deltaX * 1.5;
       pan.y -= e.deltaY * 1.5;
     }
