@@ -522,7 +522,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       // Shift+scroll: zoom
       const { sx, sy } = getCanvasXY(e);
       const before = s2w(sx, sy);
-      const factor = e.deltaY < 0 ? 1.075 : 1 / 1.075;
+      const factor = e.deltaY < 0 ? 1.05625 : 1 / 1.05625;
       setZoom(Math.max(0.05, Math.min(32, zoom * factor)));
       const after = s2w(sx, sy);
       pan.x += (after.x - before.x) * zoom;
