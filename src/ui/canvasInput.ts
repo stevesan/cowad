@@ -610,8 +610,8 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
   window.addEventListener('keydown', e => {
     if (['INPUT','SELECT','TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
-    // Play: Ctrl+P
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+    // Play: Ctrl+T
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
       e.preventDefault(); launchWAD(); return;
     }
     // Undo: Ctrl+Z
