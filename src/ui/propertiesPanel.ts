@@ -354,8 +354,8 @@ function applyDoor(sectorId: string, doorType: number, tex: DoorTextures): void 
     const oldLd = { ...ld };
 
     if (!ld.backSide) {
-      // One-sided linedef (door track side wall): add lower unpeg so mid texture stays fixed
-      const newFlags = (ld.flags || 0) | 32; // lower unpeg
+      // One-sided linedef (door track side wall): add upper unpeg so mid texture stays fixed
+      const newFlags = (ld.flags || 0) | 16; // upper unpeg
       record(`map/linedefs/${lid}`, oldLd, { ...oldLd, flags: newFlags });
       mapRef('linedefs').child(lid).update({ flags: newFlags });
       // Set mid texture to track sides
