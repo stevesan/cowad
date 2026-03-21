@@ -346,16 +346,16 @@ function animate(time: number): void {
     highlightedOrigColor = null;
   }
 
-  // Continuously update selection from crosshair raycast
+  // Raycast from crosshair (locked) or cursor (unlocked)
+  raycaster.setFromCamera(pointerLocked ? mouse.set(0, 0) : unlockedMouse, camera);
+  const hits = raycaster.intersectObjects(sceneGroup.children, false);
+
+  // Update selection when pointer-locked
   if (pointerLocked) {
-    mouse.set(0, 0);
-    raycaster.setFromCamera(mouse, camera);
-    const hits = raycaster.intersectObjects(sceneGroup.children, false);
     if (hits.length > 0) {
       const ud = hits[0].object.userData;
       if (ud.entityType && ud.entityId) {
         const newType = ud.entityType === 'linedef' ? 'linedef' : 'sector';
-        // Determine active side for linedefs
         let newSide: 'front' | 'back' | null = null;
         if (newType === 'linedef' && ud.sidedefId) {
           const ld = maps.linedefs.get(ud.entityId);
@@ -366,27 +366,27 @@ function animate(time: number): void {
           setActiveSide(newSide);
           renderPanel();
         }
-
-        // Highlight the surface under crosshair with a slow throb
-        if (!ud.billboard) {
-          const hitMesh = hits[0].object as THREE.Mesh;
-          if (hitMesh !== prevHighlightMesh) highlightStartTime = time;
-          const mat = hitMesh.material as THREE.MeshBasicMaterial;
-          highlightedOrigColor = mat.color.clone();
-          highlightedMesh = hitMesh;
-          const throb = 0.12 + 0.12 * Math.cos((time - highlightStartTime) * 0.004);
-          mat.color.setRGB(
-            highlightedOrigColor.r + throb,
-            highlightedOrigColor.g + throb,
-            highlightedOrigColor.b + throb,
-          );
-        }
       }
     } else if (selected) {
       setSelected(null);
       setActiveSide(null);
       renderPanel();
     }
+  }
+
+  // Highlight surface under crosshair/cursor with a slow throb
+  if (hits.length > 0 && !hits[0].object.userData.billboard) {
+    const hitMesh = hits[0].object as THREE.Mesh;
+    if (hitMesh !== prevHighlightMesh) highlightStartTime = time;
+    const mat = hitMesh.material as THREE.MeshBasicMaterial;
+    highlightedOrigColor = mat.color.clone();
+    highlightedMesh = hitMesh;
+    const throb = 0.12 + 0.12 * Math.cos((time - highlightStartTime) * 0.004);
+    mat.color.setRGB(
+      highlightedOrigColor.r + throb,
+      highlightedOrigColor.g + throb,
+      highlightedOrigColor.b + throb,
+    );
   }
 
   // Align billboards (things) with view plane (all face same direction)
