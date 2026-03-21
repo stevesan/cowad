@@ -6,6 +6,7 @@ import { importWad } from '../wad/textureLoader';
 import { toggle3D, is3DActive } from '../3d/view3d';
 import { showToast } from './toast';
 import { renderPanel } from './propertiesPanel';
+import { openThingBrowser } from './thingBrowser';
 import type { ToolType } from '../types';
 
 export function initToolbar(doSetTool: (t: ToolType) => void): void {
@@ -31,6 +32,8 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
     });
     input.click();
   });
+
+  document.getElementById('thing-type-btn')!.addEventListener('click', openThingBrowser);
 
   document.getElementById('view3d-btn')!.addEventListener('click', () => {
     toggle3D();

@@ -4,10 +4,11 @@ import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
 import { pointInPoly, polyArea } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
+import { getSelectedThingType } from '../ui/thingBrowser';
 import type { DrawVertex, Linedef, Point } from '../types';
 
 export function placeThing(wx: number, wy: number): void {
-  const type = parseInt((document.getElementById('thing-type-sel') as HTMLSelectElement).value, 10);
+  const type = getSelectedThingType();
   const val = { x: wx, y: wy, angle: 0, type, flags: 7 };
   const ref = mapRef('things').push(val);
   record(`map/things/${ref.key}`, null, val);
