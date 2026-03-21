@@ -15,7 +15,7 @@ import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
 import { showToast } from './toast';
-import { toggle3D, is3DActive } from '../3d/view3d';
+import { toggle3D, is3DActive, get3DCameraPos } from '../3d/view3d';
 import { launchWAD } from '../export/wadExport';
 import type { ToolType, Selection, DrawVertex } from '../types';
 
@@ -610,9 +610,19 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
   window.addEventListener('keydown', e => {
     if (['INPUT','SELECT','TEXTAREA'].includes((e.target as HTMLElement).tagName)) return;
 
-    // Play: Ctrl+T
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 't') {
-      e.preventDefault(); launchWAD(); return;
+    // Play: F5
+    if (e.key === 'F5') {
+      e.preventDefault();
+      const cam = get3DCameraPos();
+      const pos = cam ?? mouseWorld;
+      let insideSector = false;
+      maps.sectors.forEach((_, sid) => {
+        const poly = buildSectorPoly(sid);
+        if (poly && pointInPoly(pos.x, pos.y, poly)) insideSector = true;
+      });
+      if (insideSector) launchWAD(pos.x, pos.y);
+      else launchWAD();
+      return;
     }
     // Undo: Ctrl+Z
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {

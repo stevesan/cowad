@@ -90,7 +90,7 @@ async function configure() {
 
 let childProc = null;
 
-function launch(cfg, wadBuffer) {
+function launch(cfg, wadBuffer, spawnPos) {
   const { game, mapName } = detectMap(wadBuffer);
   const iwad = game === 'doom1' ? cfg.doom1Wad : cfg.doom2Wad;
   console.log(`Detected: ${game} ${mapName} | IWAD: ${path.basename(iwad)}`);
@@ -104,6 +104,10 @@ function launch(cfg, wadBuffer) {
   }
 
   const args = ['-iwad', iwad, '-file', TEMP_WAD, '+map', mapName];
+  if (spawnPos) {
+    args.push(`+warp ${spawnPos.x} ${spawnPos.y}`);
+    console.log(`Spawn position: ${spawnPos.x}, ${spawnPos.y}`);
+  }
   console.log(`Launching: ${cfg.portPath} ${args.join(' ')}`);
 
   childProc = execFile(cfg.portPath, args, (err) => {
@@ -130,16 +134,23 @@ function startServer(cfg) {
       return;
     }
 
-    if (req.method === 'POST' && req.url === '/launch') {
+    const parsedUrl = new URL(req.url, `http://${req.headers.host}`);
+
+    if (req.method === 'POST' && parsedUrl.pathname === '/launch') {
       const chunks = [];
       req.on('data', chunk => chunks.push(chunk));
       req.on('end', () => {
         const wadBuffer = Buffer.concat(chunks);
         console.log(`\nReceived WAD: ${wadBuffer.length} bytes`);
 
+        // Parse optional spawn position from query string
+        const qx = parsedUrl.searchParams.get('x');
+        const qy = parsedUrl.searchParams.get('y');
+        const spawnPos = qx != null && qy != null ? { x: parseInt(qx, 10), y: parseInt(qy, 10) } : null;
+
         try {
           const { game, mapName } = detectMap(wadBuffer);
-          launch(cfg, wadBuffer);
+          launch(cfg, wadBuffer, spawnPos);
           res.writeHead(200, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: true, game, mapName }));
         } catch (err) {

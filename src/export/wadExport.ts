@@ -296,13 +296,14 @@ export function exportWAD(): void {
 
 const LAUNCHER_URL = 'http://127.0.0.1:3666';
 
-export async function launchWAD(): Promise<void> {
+export async function launchWAD(spawnX?: number, spawnY?: number): Promise<void> {
   const result = buildWAD();
   if (!result) return;
   const { wad, msg } = result;
 
   try {
-    const res = await fetch(`${LAUNCHER_URL}/launch`, {
+    const params = spawnX != null && spawnY != null ? `?x=${Math.round(spawnX)}&y=${Math.round(spawnY)}` : '';
+    const res = await fetch(`${LAUNCHER_URL}/launch${params}`, {
       method: 'POST',
       body: new Uint8Array(wad),
     });

@@ -435,6 +435,10 @@ export function toggle3D(): void {
 }
 
 export function is3DActive(): boolean { return isActive; }
+export function get3DCameraPos(): { x: number; y: number } | null {
+  if (!isActive || !camera) return null;
+  return { x: camera.position.x, y: -camera.position.z }; // Three coords → DOOM coords
+}
 
 let rebuildTimer = 0;
 

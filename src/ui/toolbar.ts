@@ -44,7 +44,7 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
 
   document.getElementById('clean-btn')!.addEventListener('click', cleanupMap);
   document.getElementById('wad-btn')!.addEventListener('click', exportWAD);
-  document.getElementById('play-btn')!.addEventListener('click', launchWAD);
+  document.getElementById('play-btn')!.addEventListener('click', () => launchWAD());
 
   document.getElementById('clear-btn')!.addEventListener('click', () => {
     if (!confirm('Clear the entire map? This cannot be undone.')) return;
