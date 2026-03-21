@@ -220,6 +220,43 @@ const DOOR_TYPES: { value: number; label: string }[] = [
   { value: 34, label: 'Red Key Door (stays open)' },
 ];
 
+function doorTexField(id: string, label: string, value: string, texType: 'flat' | 'wall'): string {
+  const dataUrl = isWadLoaded() ? getTextureDataUrl(value) : null;
+  const preview = dataUrl
+    ? `<img class="tex-preview door-tex-pick" src="${dataUrl}" width="24" height="24" data-door-id="${id}" data-tex-type="${texType}">`
+    : `<span class="door-tex-pick tex-placeholder" data-door-id="${id}" data-tex-type="${texType}"></span>`;
+  return `<div class="prop-row"><label>${label}</label>
+    ${preview}
+    <span class="tex-name door-tex-pick" data-door-id="${id}" data-tex-type="${texType}" id="${id}-name">${value || '—'}</span>
+    <input type="hidden" id="${id}" value="${esc(value)}">
+  </div>`;
+}
+
+function refreshDoorTexPreview(id: string): void {
+  const input = document.getElementById(id) as HTMLInputElement;
+  if (!input) return;
+  const val = input.value;
+  const nameEl = document.getElementById(id + '-name');
+  if (nameEl) nameEl.textContent = val || '—';
+  // Update preview image
+  const container = input.closest('.prop-row');
+  if (!container) return;
+  const img = container.querySelector('img.door-tex-pick') as HTMLImageElement | null;
+  const placeholder = container.querySelector('span.door-tex-pick.tex-placeholder') as HTMLElement | null;
+  const dataUrl = isWadLoaded() ? getTextureDataUrl(val) : null;
+  if (dataUrl && img) {
+    img.src = dataUrl;
+  } else if (dataUrl && placeholder) {
+    const newImg = document.createElement('img');
+    newImg.className = 'tex-preview door-tex-pick';
+    newImg.src = dataUrl;
+    newImg.width = 24; newImg.height = 24;
+    newImg.dataset.doorId = placeholder.dataset.doorId!;
+    newImg.dataset.texType = placeholder.dataset.texType!;
+    placeholder.replaceWith(newImg);
+  }
+}
+
 function showDoorModal(sectorId: string): void {
   let modal = document.getElementById('door-modal');
   if (modal) modal.remove();
@@ -235,15 +272,34 @@ function showDoorModal(sectorId: string): void {
           ${DOOR_TYPES.map(d => `<option value="${d.value}">${d.label}</option>`).join('')}
         </select>
       </div>
-      <div class="prop-row"><label>Door Texture</label>
-        <input type="text" id="door-track" value="BIGDOOR2">
-      </div>
+      ${doorTexField('door-tex-face', 'Door Face', 'BIGDOOR2', 'wall')}
+      ${doorTexField('door-tex-bottom', 'Door Bottom', 'FLAT20', 'flat')}
+      ${doorTexField('door-tex-track', 'Track Sides', 'DOORTRAK', 'wall')}
+      ${doorTexField('door-tex-floor', 'Track Floor', 'FLAT20', 'flat')}
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
         <button id="door-cancel" class="del-btn" style="background:#333;">Cancel</button>
         <button id="door-ok" class="del-btn" style="background:#2a6e2a;">OK</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
+
+  // Texture picker click handlers
+  modal.querySelectorAll<HTMLElement>('.door-tex-pick').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      const fieldId = el.dataset.doorId!;
+      const texType = el.dataset.texType as 'flat' | 'wall';
+      const input = document.getElementById(fieldId) as HTMLInputElement;
+      openTextureBrowser({
+        filter: texType,
+        currentValue: input.value,
+        onSelect: (name) => {
+          input.value = name;
+          refreshDoorTexPreview(fieldId);
+        },
+      });
+    });
+  });
 
   modal.addEventListener('click', e => { if (e.target === modal) modal!.remove(); });
   modal.addEventListener('keydown', e => {
@@ -254,38 +310,62 @@ function showDoorModal(sectorId: string): void {
   document.getElementById('door-cancel')!.addEventListener('click', () => modal!.remove());
   document.getElementById('door-ok')!.addEventListener('click', () => {
     const doorType = parseInt((document.getElementById('door-type') as HTMLSelectElement).value, 10);
-    const doorTex = (document.getElementById('door-track') as HTMLInputElement).value.trim() || 'BIGDOOR2';
-    applyDoor(sectorId, doorType, doorTex);
+    const doorFace = (document.getElementById('door-tex-face') as HTMLInputElement).value || 'BIGDOOR2';
+    const doorBottom = (document.getElementById('door-tex-bottom') as HTMLInputElement).value || 'FLAT20';
+    const trackSides = (document.getElementById('door-tex-track') as HTMLInputElement).value || 'DOORTRAK';
+    const trackFloor = (document.getElementById('door-tex-floor') as HTMLInputElement).value || 'FLAT20';
+    applyDoor(sectorId, doorType, { face: doorFace, bottom: doorBottom, trackSides, trackFloor });
     modal!.remove();
   });
 
   (document.getElementById('door-type') as HTMLSelectElement).focus();
 }
 
-function applyDoor(sectorId: string, doorType: number, doorTex: string): void {
+interface DoorTextures {
+  face: string;      // upper texture on adjacent-side sidedefs (the door face)
+  bottom: string;    // ceiling flat of door sector (visible underside)
+  trackSides: string; // upper texture on door-side sidedefs (track rails)
+  trackFloor: string; // floor flat of door sector
+}
+
+function applyDoor(sectorId: string, doorType: number, tex: DoorTextures): void {
   const sec = maps.sectors.get(sectorId);
   if (!sec) return;
 
   beginAction();
 
-  // Set sector ceiling = floor (closed door)
+  // Set sector: ceiling = floor (closed), textures for track floor and door bottom
   const floorH = sec.floor ?? 0;
-  record(`map/sectors/${sectorId}`, { ...sec }, { ...sec, ceiling: floorH });
-  mapRef('sectors').child(sectorId).update({ ceiling: floorH });
+  const newSec = { ...sec, ceiling: floorH, ceilTex: tex.bottom, floorTex: tex.trackFloor };
+  record(`map/sectors/${sectorId}`, { ...sec }, newSec);
+  mapRef('sectors').child(sectorId).update({ ceiling: floorH, ceilTex: tex.bottom, floorTex: tex.trackFloor });
 
-  // Find all two-sided linedefs bordering this sector
+  // Find all linedefs bordering this sector
   maps.linedefs.forEach((ld, lid) => {
-    if (!ld.frontSide || !ld.backSide) return;
+    if (!ld.frontSide) return;
     const frontSd = maps.sidedefs.get(ld.frontSide);
-    const backSd = maps.sidedefs.get(ld.backSide);
-    if (!frontSd || !backSd) return;
+    if (!frontSd) return;
+    const backSd = ld.backSide ? maps.sidedefs.get(ld.backSide) : null;
 
     const frontIsDoor = frontSd.sector === sectorId;
-    const backIsDoor = backSd.sector === sectorId;
+    const backIsDoor = backSd?.sector === sectorId;
     if (!frontIsDoor && !backIsDoor) return;
 
     const oldLd = { ...ld };
-    const newFlags = (ld.flags || 0) | 16; // add upper unpeg
+
+    if (!ld.backSide) {
+      // One-sided linedef (door track side wall): add lower unpeg so mid texture stays fixed
+      const newFlags = (ld.flags || 0) | 32; // lower unpeg
+      record(`map/linedefs/${lid}`, oldLd, { ...oldLd, flags: newFlags });
+      mapRef('linedefs').child(lid).update({ flags: newFlags });
+      // Set mid texture to track sides
+      record(`map/sidedefs/${ld.frontSide}`, { ...frontSd }, { ...frontSd, mid: tex.trackSides });
+      mapRef('sidedefs').child(ld.frontSide).update({ mid: tex.trackSides });
+      return;
+    }
+
+    // Two-sided linedef: set door special + upper unpeg
+    const newFlags = (ld.flags || 0) | 16; // upper unpeg
 
     if (frontIsDoor) {
       // Front side faces door sector — flip linedef so front faces adjacent sector
@@ -303,13 +383,17 @@ function applyDoor(sectorId: string, doorType: number, doorTex: string): void {
       mapRef('linedefs').child(lid).update({ special: doorType, flags: newFlags });
     }
 
-    // Set door texture on the sidedef referencing the adjacent (non-door) sector
-    // After any flip, this is always the front sidedef
+    // Adjacent-side sidedef: door face upper texture
     const adjSdId = frontIsDoor ? ld.backSide! : ld.frontSide!;
     const adjSd = maps.sidedefs.get(adjSdId)!;
-    const oldSd = { ...adjSd };
-    record(`map/sidedefs/${adjSdId}`, oldSd, { ...oldSd, upper: doorTex });
-    mapRef('sidedefs').child(adjSdId).update({ upper: doorTex });
+    record(`map/sidedefs/${adjSdId}`, { ...adjSd }, { ...adjSd, upper: tex.face });
+    mapRef('sidedefs').child(adjSdId).update({ upper: tex.face });
+
+    // Door-side sidedef: track texture on upper
+    const doorSdId = frontIsDoor ? ld.frontSide! : ld.backSide!;
+    const doorSd = maps.sidedefs.get(doorSdId)!;
+    record(`map/sidedefs/${doorSdId}`, { ...doorSd }, { ...doorSd, upper: tex.trackSides });
+    mapRef('sidedefs').child(doorSdId).update({ upper: tex.trackSides });
   });
 
   endAction();
