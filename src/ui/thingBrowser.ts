@@ -20,7 +20,7 @@ export function setSelectedThingType(type: number): void {
   updateToolbarButton();
 }
 
-function updateToolbarButton(): void {
+export function updateToolbarButton(): void {
   const btn = document.getElementById('thing-type-btn');
   if (!btn) return;
   const info = THINGS[selectedThingType];

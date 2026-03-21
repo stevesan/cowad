@@ -2,6 +2,7 @@ import { db, mapRef } from '../config/firebase';
 import { uid, maps, selected, setSelected, setSnapSize, triggerDraw, triggerRenderPanel } from '../state/appState';
 import { onLinedefAdded, onLinedefChanged, onLinedefRemoved } from '../state/indices';
 import { loadTexturesFromDb } from '../wad/textureLoader';
+import { updateToolbarButton } from '../ui/thingBrowser';
 import type { MapCollection } from '../types';
 
 function colToType(col: string): string { return col.replace(/s$/, ''); }
@@ -57,7 +58,7 @@ export function initSync(): void {
   });
 
   // Load persisted IWAD textures
-  loadTexturesFromDb();
+  loadTexturesFromDb().then(updateToolbarButton);
 }
 
 export function initPresence(): void {
