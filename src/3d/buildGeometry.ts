@@ -276,7 +276,7 @@ export function buildThings(group: THREE.Group): void {
   maps.things.forEach((thing, tid) => {
     const info = THINGS[thing.type];
     const cat = info?.cat || 'player';
-    const radius = info?.r || 16;
+    const radius = info?.radius || 16;
     const color = CAT_COLOR[cat] || '#fff';
     const floorH = thingFloorHeight(thing.x, thing.y);
 

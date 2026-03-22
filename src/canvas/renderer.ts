@@ -149,7 +149,7 @@ function drawThings(): void {
   maps.things.forEach((th, tid) => {
     const s    = w2s(th.x, th.y);
     const info = THINGS[th.type] || { r: 16, cat: 'player' };
-    const r    = Math.max(info.r * zoom, 4);
+    const r    = Math.max(info.radius * zoom, 4);
     const boxSize = r * 2;
     const isSel = selected && selected.type === 'thing' && selected.id === tid;
     const isHov = hovered  && hovered.type  === 'thing' && hovered.id  === tid;

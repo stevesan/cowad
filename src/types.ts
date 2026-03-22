@@ -77,5 +77,5 @@ export interface Point {
 export interface ThingInfo {
   name: string;
   cat: string;
-  r: number;
+  radius: number;
 }
