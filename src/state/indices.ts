@@ -1,52 +1,117 @@
 import { maps } from './appState';
 
-/**
- * Reverse index: vertex ID → set of linedef IDs that use it.
- * Maintained incrementally via the update helpers below.
- */
+/** Reverse index: vertex ID → set of linedef IDs that use it. */
 export const vertexToLinedefs = new Map<string, Set<string>>();
+
+/** Reverse index: sector ID → set of sidedef IDs that reference it. */
+export const sectorToSidedefs = new Map<string, Set<string>>();
+
+/** Reverse index: sidedef ID → linedef ID that owns it. */
+export const sidedefToLinedef = new Map<string, string>();
+
+/** Derived lookup: get all linedef IDs bordering a sector. */
+export function getLinedefsForSector(sid: string): Set<string> {
+  const result = new Set<string>();
+  const sdIds = sectorToSidedefs.get(sid);
+  if (sdIds) {
+    for (const sdId of sdIds) {
+      const ldId = sidedefToLinedef.get(sdId);
+      if (ldId) result.add(ldId);
+    }
+  }
+  return result;
+}
 
 /** Rebuild all indices from scratch (e.g. on initial load). */
 export function rebuildIndices(): void {
   vertexToLinedefs.clear();
+  sectorToSidedefs.clear();
+  sidedefToLinedef.clear();
   maps.linedefs.forEach((ld, id) => {
-    addLinedefToIndex(id, ld.v1, ld.v2);
+    addVertexIndex(id, ld.v1, ld.v2);
+    addSidedefToLinedefIndex(id, ld.frontSide, ld.backSide);
+  });
+  maps.sidedefs.forEach((sd, id) => {
+    addSectorToSidedefIndex(id, sd.sector);
   });
 }
 
 /** Call when a linedef is added. */
 export function onLinedefAdded(id: string, v1: string, v2: string): void {
-  addLinedefToIndex(id, v1, v2);
+  addVertexIndex(id, v1, v2);
+  const ld = maps.linedefs.get(id);
+  if (ld) addSidedefToLinedefIndex(id, ld.frontSide, ld.backSide);
 }
 
-/** Call when a linedef is changed (vertices may have changed). */
+/** Call when a linedef is changed. */
 export function onLinedefChanged(id: string, v1: string, v2: string, oldV1?: string, oldV2?: string): void {
-  // Remove old mappings if vertices changed
-  if (oldV1 && oldV1 !== v1) {
-    vertexToLinedefs.get(oldV1)?.delete(id);
-  }
-  if (oldV2 && oldV2 !== v2) {
-    vertexToLinedefs.get(oldV2)?.delete(id);
-  }
-  addLinedefToIndex(id, v1, v2);
+  if (oldV1 && oldV1 !== v1) vertexToLinedefs.get(oldV1)?.delete(id);
+  if (oldV2 && oldV2 !== v2) vertexToLinedefs.get(oldV2)?.delete(id);
+  addVertexIndex(id, v1, v2);
+  // Re-map sidedef→linedef in case frontSide/backSide changed
+  removeSidedefToLinedefIndex(id);
+  const ld = maps.linedefs.get(id);
+  if (ld) addSidedefToLinedefIndex(id, ld.frontSide, ld.backSide);
 }
 
 /** Call when a linedef is removed. */
 export function onLinedefRemoved(id: string, v1: string, v2: string): void {
   vertexToLinedefs.get(v1)?.delete(id);
   vertexToLinedefs.get(v2)?.delete(id);
+  removeSidedefToLinedefIndex(id);
 }
 
-function addLinedefToIndex(id: string, v1: string, v2: string): void {
+/** Call when a sidedef is added. */
+export function onSidedefAdded(id: string, sector: string | null): void {
+  addSectorToSidedefIndex(id, sector);
+}
+
+/** Call when a sidedef is changed. */
+export function onSidedefChanged(id: string, sector: string | null, oldSector?: string | null): void {
+  if (oldSector && oldSector !== sector) {
+    sectorToSidedefs.get(oldSector)?.delete(id);
+  }
+  addSectorToSidedefIndex(id, sector);
+}
+
+/** Call when a sidedef is removed. */
+export function onSidedefRemoved(id: string, sector: string | null): void {
+  if (sector) sectorToSidedefs.get(sector)?.delete(id);
+  sidedefToLinedef.delete(id);
+}
+
+// ── vertex ↔ linedef ──
+
+function addVertexIndex(id: string, v1: string, v2: string): void {
   if (!vertexToLinedefs.has(v1)) vertexToLinedefs.set(v1, new Set());
   if (!vertexToLinedefs.has(v2)) vertexToLinedefs.set(v2, new Set());
   vertexToLinedefs.get(v1)!.add(id);
   vertexToLinedefs.get(v2)!.add(id);
 }
 
+// ── sidedef ↔ linedef ──
+
+function addSidedefToLinedefIndex(ldId: string, frontSide?: string | null, backSide?: string | null): void {
+  if (frontSide) sidedefToLinedef.set(frontSide, ldId);
+  if (backSide) sidedefToLinedef.set(backSide, ldId);
+}
+
+function removeSidedefToLinedefIndex(ldId: string): void {
+  for (const [sdId, ownerLd] of sidedefToLinedef) {
+    if (ownerLd === ldId) sidedefToLinedef.delete(sdId);
+  }
+}
+
+// ── sector ↔ sidedef ──
+
+function addSectorToSidedefIndex(sdId: string, sector: string | null): void {
+  if (!sector) return;
+  if (!sectorToSidedefs.has(sector)) sectorToSidedefs.set(sector, new Set());
+  sectorToSidedefs.get(sector)!.add(sdId);
+}
+
 /**
  * Find all sectors whose boundary contains both vertex IDs.
- * Uses the reverse index to avoid scanning all sectors.
  * Returns array of { sid, area } sorted by area ascending.
  */
 export function findSectorsContainingBothVertices(
@@ -56,7 +121,6 @@ export function findSectorsContainingBothVertices(
   buildSectorPoly: (sid: string) => { x: number; y: number }[] | null,
   polyArea: (poly: { x: number; y: number }[]) => number,
 ): { sid: string; area: number }[] {
-  // Collect candidate sectors from linedefs touching vid1
   const candidateSectors = new Set<string>();
   const lds1 = vertexToLinedefs.get(vid1);
   if (!lds1) return [];
@@ -65,7 +129,6 @@ export function findSectorsContainingBothVertices(
     collectSectorsFromLinedef(ldId, candidateSectors);
   }
 
-  // Filter to sectors that also contain vid2 on their boundary
   const results: { sid: string; area: number }[] = [];
   for (const sid of candidateSectors) {
     const loops = buildSectorLoopIds(sid);
@@ -84,7 +147,6 @@ export function findSectorsContainingBothVertices(
 
 /**
  * Check if any sector's boundary contains both vertex IDs.
- * Fast check version - returns true as soon as one is found.
  */
 export function anyBoundaryContainsBoth(
   vid1: string,

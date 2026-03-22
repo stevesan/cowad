@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { maps } from '../../src/state/appState';
-import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, rebuildIndices } from '../../src/state/indices';
+import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, onSidedefAdded, onSidedefChanged, onSidedefRemoved, rebuildIndices } from '../../src/state/indices';
 import type { DrawVertex } from '../../src/types';
 
 // ── Firebase mock ──
@@ -17,9 +17,11 @@ vi.mock('../../src/config/firebase', () => {
       if ((maps as any)[col]) {
         (maps as any)[col].set(key, { ...val });
       }
-      // Maintain reverse index for linedefs
+      // Maintain indices
       if (col === 'linedefs' && val.v1 && val.v2) {
         onLinedefAdded(key, val.v1, val.v2);
+      } else if (col === 'sidedefs' && val.sector) {
+        onSidedefAdded(key, val.sector);
       }
       // Return a thenable with .key accessible synchronously (like Firebase SDK)
       const result = Promise.resolve({ key }) as any;
@@ -32,11 +34,17 @@ vi.mock('../../src/config/firebase', () => {
         if ((maps as any)[col]) {
           const existing = (maps as any)[col].get(id);
           if (existing) {
-            // Maintain reverse index for linedefs
-            if (col === 'linedefs' && (val.v1 || val.v2)) {
-              onLinedefChanged(id, val.v1 || existing.v1, val.v2 || existing.v2, existing.v1, existing.v2);
-            }
+            const oldV1 = existing.v1, oldV2 = existing.v2;
+            const oldSector = existing.sector;
             (maps as any)[col].set(id, { ...existing, ...val });
+            // Maintain indices
+            if (col === 'linedefs') {
+              const updated = (maps as any)[col].get(id);
+              onLinedefChanged(id, updated.v1, updated.v2, oldV1, oldV2);
+            } else if (col === 'sidedefs') {
+              const updated = (maps as any)[col].get(id);
+              onSidedefChanged(id, updated.sector, oldSector);
+            }
           }
         }
         return Promise.resolve();
@@ -46,6 +54,9 @@ vi.mock('../../src/config/firebase', () => {
         if (col === 'linedefs') {
           const existing = (maps as any)[col]?.get(id);
           if (existing) onLinedefRemoved(id, existing.v1, existing.v2);
+        } else if (col === 'sidedefs') {
+          const existing = (maps as any)[col]?.get(id);
+          if (existing) onSidedefRemoved(id, existing.sector);
         }
         if ((maps as any)[col]) (maps as any)[col].delete(id);
         return Promise.resolve();

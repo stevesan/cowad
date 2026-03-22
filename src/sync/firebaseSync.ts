@@ -1,6 +1,6 @@
 import { db, mapRef } from '../config/firebase';
 import { uid, maps, selected, setSelected, setSnapSize, triggerDraw, triggerRenderPanel } from '../state/appState';
-import { onLinedefAdded, onLinedefChanged, onLinedefRemoved } from '../state/indices';
+import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, onSidedefAdded, onSidedefChanged, onSidedefRemoved } from '../state/indices';
 import { loadTexturesFromDb } from '../wad/textureLoader';
 import { updateToolbarButton } from '../ui/thingBrowser';
 import type { MapCollection } from '../types';
@@ -14,16 +14,23 @@ function syncCollection(col: MapCollection): void {
     if (col === 'linedefs') {
       const val = s.val();
       onLinedefAdded(s.key, val.v1, val.v2);
+    } else if (col === 'sidedefs') {
+      const val = s.val();
+      onSidedefAdded(s.key, val.sector);
     }
     triggerDraw();
   });
   ref.on('child_changed', (s: FirebaseSnapshot) => {
-    if (col === 'linedefs') {
-      const old = maps.linedefs.get(s.key);
-      const val = s.val();
-      onLinedefChanged(s.key, val.v1, val.v2, old?.v1, old?.v2);
-    }
+    const oldLd = col === 'linedefs' ? maps.linedefs.get(s.key) : undefined;
+    const oldSd = col === 'sidedefs' ? maps.sidedefs.get(s.key) : undefined;
     maps[col].set(s.key, s.val());
+    if (col === 'linedefs' && oldLd) {
+      const val = s.val();
+      onLinedefChanged(s.key, val.v1, val.v2, oldLd.v1, oldLd.v2);
+    } else if (col === 'sidedefs') {
+      const val = s.val();
+      onSidedefChanged(s.key, val.sector, oldSd?.sector);
+    }
     triggerDraw();
     if (selected && selected.type === colToType(col) && selected.id === s.key) {
       triggerRenderPanel();
@@ -36,6 +43,9 @@ function syncCollection(col: MapCollection): void {
     if (col === 'linedefs') {
       const old = maps.linedefs.get(s.key);
       if (old) onLinedefRemoved(s.key, old.v1, old.v2);
+    } else if (col === 'sidedefs') {
+      const old = maps.sidedefs.get(s.key);
+      if (old) onSidedefRemoved(s.key, old.sector);
     }
     maps[col].delete(s.key);
     if (selected && selected.type === colToType(col) && selected.id === s.key) {
