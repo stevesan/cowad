@@ -93,8 +93,9 @@ vi.mock('../../src/wad/textureLoader', () => ({
   getSpritePrefixEntry: () => null,
 }));
 
-import { createSectorFromPolygon, splitSector } from '../../src/map/mapActions';
+import { createSectorFromPolygon, splitSector, deleteSelected } from '../../src/map/mapActions';
 import { buildSectorLoopIds, buildSectorPoly } from '../../src/geometry/cycleFinder';
+import { setSelected } from '../../src/state/appState';
 
 function findVertexAt(x: number, y: number): string | null {
   for (const [id, v] of maps.vertices) {
@@ -212,6 +213,84 @@ describe('sector drawing', () => {
     expect(newLoop.has(vidE)).toBe(true);
     expect(newLoop.has(vidC)).toBe(true);
     expect(newLoop.has(vidB)).toBe(true);
+  });
+
+  it('delete one sector after split: shared linedef has correct sidedef', async () => {
+    // Create square ABCD
+    const squareSid = await createSectorFromPolygon([
+      { x: 0, y: 100 },     // A
+      { x: 100, y: 100 },   // B
+      { x: 100, y: 0 },     // C
+      { x: 0, y: 0 },       // D
+    ]);
+    expect(squareSid).toBeTruthy();
+
+    const vidA = findVertexAt(0, 100)!;
+    const vidC = findVertexAt(100, 0)!;
+
+    // Split with diagonal A→C
+    await splitSector([
+      { x: 0, y: 100, existingId: vidA },
+      { x: 100, y: 0, existingId: vidC },
+    ], squareSid!);
+
+    expect(maps.sectors.size).toBe(2);
+    const [sid0, sid1] = [...maps.sectors.keys()];
+
+    // Find the diagonal linedef (A-C)
+    let diagLdId: string | null = null;
+    for (const [lid, ld] of maps.linedefs) {
+      if ((ld.v1 === vidA && ld.v2 === vidC) || (ld.v1 === vidC && ld.v2 === vidA)) {
+        diagLdId = lid;
+        break;
+      }
+    }
+    expect(diagLdId).toBeTruthy();
+
+    const diagLd = maps.linedefs.get(diagLdId!)!;
+    expect(diagLd.frontSide).toBeTruthy();
+    expect(diagLd.backSide).toBeTruthy();
+
+    // Check that the front and back sidedefs reference DIFFERENT sectors
+    const frontSd = maps.sidedefs.get(diagLd.frontSide!)!;
+    const backSd = maps.sidedefs.get(diagLd.backSide!)!;
+    expect(frontSd.sector).not.toBe(backSd.sector);
+
+    // Verify the front sidedef's sector is on the right side of v1→v2
+    const v1 = maps.vertices.get(diagLd.v1)!;
+    const v2 = maps.vertices.get(diagLd.v2)!;
+    const frontSectorLoop = buildSectorLoopIds(frontSd.sector);
+    // Find a vertex in the front sector that isn't A or C
+    const frontVerts = new Set(frontSectorLoop.flat());
+    frontVerts.delete(vidA);
+    frontVerts.delete(vidC);
+    const testVid = [...frontVerts][0];
+    const testV = maps.vertices.get(testVid)!;
+    const cross = (v2.x - v1.x) * (testV.y - v1.y) - (v2.y - v1.y) * (testV.x - v1.x);
+    // Front sector should be on the right (cross < 0 in y-up)
+    expect(cross).toBeLessThan(0);
+
+    // Now delete sid0 and verify the surviving sector keeps its linedef correctly
+    setSelected({ type: 'sector', id: sid0 });
+    deleteSelected();
+
+    expect(maps.sectors.size).toBe(1);
+    expect(maps.sectors.has(sid1)).toBe(true);
+
+    // The diagonal should now be single-sided with its sidedef referencing sid1
+    const updatedDiag = maps.linedefs.get(diagLdId!);
+    if (updatedDiag) {
+      // Linedef survived (not both sides belonged to deleted sector)
+      expect(updatedDiag.frontSide).toBeTruthy();
+      const remainingSd = maps.sidedefs.get(updatedDiag.frontSide!)!;
+      expect(remainingSd.sector).toBe(sid1);
+      expect(updatedDiag.backSide).toBeFalsy();
+    }
+
+    // The surviving sector should still have a valid loop
+    const survivingLoops = buildSectorLoopIds(sid1);
+    expect(survivingLoops.length).toBe(1);
+    expect(survivingLoops[0].length).toBe(3);
   });
 
   it('pinch vertex: two triangles sharing a vertex produce a single loop', async () => {

@@ -679,27 +679,38 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
     }
   }
 
-  // 4. Create chain linedefs (two-sided: front=original, back=new)
+  // 4. Create chain linedefs (two-sided)
+  // Determine which sector is on the right (front) side of the chain direction.
+  // path2 stays with sectorId; check if it's on the right of start→end.
+  const sv = maps.vertices.get(startVid)!;
+  const ev = maps.vertices.get(endVid)!;
+  const testVid = path2[Math.floor(path2.length / 2)];
+  const tv = maps.vertices.get(testVid)!;
+  const cross = (ev.x - sv.x) * (tv.y - sv.y) - (ev.y - sv.y) * (tv.x - sv.x);
+  // In y-up: cross < 0 → right (front) side, cross > 0 → left (back) side
+  const originalOnFront = cross < 0;
+  const frontSector = originalOnFront ? sectorId : newSid;
+  const backSector = originalOnFront ? newSid : sectorId;
+
   for (let i = 0; i < chainVids.length - 1; i++) {
     const va = chainVids[i], vb = chainVids[i + 1];
 
     // Skip if linedef already exists between these vertices
     if (findExistingLinedef(maps.linedefs, va, vb)) continue;
 
-    // Orient in chain direction: front (right) = original sector, back (left) = new sector
     const ldVal: any = { v1: va, v2: vb, flags: 4 };
     const ldRef = mapRef('linedefs').push(ldVal);
     record(`map/linedefs/${ldRef.key}`, null, ldVal);
 
     const frontSdVal = {
-      sector: sectorId, xoff: 0, yoff: 0,
+      sector: frontSector, xoff: 0, yoff: 0,
       upper: 'STARTAN2', mid: '-', lower: 'STARTAN2',
     };
     const frontSdRef = await mapRef('sidedefs').push(frontSdVal);
     record(`map/sidedefs/${frontSdRef.key}`, null, frontSdVal);
 
     const backSdVal = {
-      sector: newSid, xoff: 0, yoff: 0,
+      sector: backSector, xoff: 0, yoff: 0,
       upper: 'STARTAN2', mid: '-', lower: 'STARTAN2',
     };
     const backSdRef = await mapRef('sidedefs').push(backSdVal);
