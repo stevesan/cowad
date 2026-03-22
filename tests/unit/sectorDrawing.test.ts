@@ -214,6 +214,57 @@ describe('sector drawing', () => {
     expect(newLoop.has(vidB)).toBe(true);
   });
 
+  it('pinch vertex: two triangles sharing a vertex produce a single loop', async () => {
+    // Create triangle ABV
+    const sid1 = await createSectorFromPolygon([
+      { x: 0, y: 100 },     // A
+      { x: 100, y: 100 },   // B
+      { x: 50, y: 50 },     // V
+    ]);
+    expect(sid1).toBeTruthy();
+
+    const vidA = findVertexAt(0, 100)!;
+    const vidB = findVertexAt(100, 100)!;
+    const vidV = findVertexAt(50, 50)!;
+
+    // Split triangle ABV with line from V outward into a second triangle VDC
+    // by drawing a new sector that shares vertex V
+    const sid2 = await createSectorFromPolygon([
+      { x: 50, y: 50, existingId: vidV },
+      { x: 100, y: 0 },     // D
+      { x: 0, y: 0 },       // C
+    ]);
+    expect(sid2).toBeTruthy();
+    expect(maps.sectors.size).toBe(2);
+
+    const vidC = findVertexAt(0, 0)!;
+    const vidD = findVertexAt(100, 0)!;
+
+    // Now merge both triangles into one sector by making all sidedefs
+    // reference sid1 (simulating a single pinched sector)
+    for (const [sdId, sd] of maps.sidedefs) {
+      if (sd.sector === sid2) {
+        maps.sidedefs.set(sdId, { ...sd, sector: sid1! });
+      }
+    }
+    maps.sectors.delete(sid2!);
+
+    // Rebuild indices after manual mutation
+    rebuildIndices();
+
+    // The single sector now has 6 edges forming a bowtie through V
+    const loops = buildSectorLoopIds(sid1!);
+    expect(loops.length).toBe(1);
+    expect(loops[0].length).toBe(6); // A, B, V, D, C, V (V visited twice)
+
+    const loop = loops[0];
+    expect(loop.filter(v => v === vidV).length).toBe(2); // V appears twice
+    expect(loop).toContain(vidA);
+    expect(loop).toContain(vidB);
+    expect(loop).toContain(vidC);
+    expect(loop).toContain(vidD);
+  });
+
   it('draw adjacent sector on unsplit square using non-adjacent vertices', async () => {
     // Create square ABCD (clockwise in y-up coords)
     await createSectorFromPolygon([

@@ -3,50 +3,61 @@ import { getLinedefsForSector } from '../state/indices';
 import { pointInPoly, polyArea } from './hitTest';
 import type { Point } from '../types';
 
-/** Return all boundary loops for a sector as vertex ID arrays. */
+/** Return all boundary loops for a sector as vertex ID arrays.
+ *  Uses Hierholzer's algorithm to correctly handle pinch vertices
+ *  (vertices visited twice in a single boundary loop). */
 export function buildSectorLoopIds(sid: string): string[][] {
   const ldIds = getLinedefsForSector(sid);
   if (!ldIds.size) return [];
 
-  // Build undirected adjacency from linedefs bordering this sector
-  const adj = new Map<string, Set<string>>();
+  // Build adjacency: vertex → list of {angle, neighbor, ldId} sorted by angle
+  const adj = new Map<string, { angle: number; vid: string; ldId: string }[]>();
   for (const ldId of ldIds) {
     const ld = maps.linedefs.get(ldId);
     if (!ld) continue;
-    if (!adj.has(ld.v1)) adj.set(ld.v1, new Set());
-    if (!adj.has(ld.v2)) adj.set(ld.v2, new Set());
-    adj.get(ld.v1)!.add(ld.v2);
-    adj.get(ld.v2)!.add(ld.v1);
+    const v1 = maps.vertices.get(ld.v1);
+    const v2 = maps.vertices.get(ld.v2);
+    if (!v1 || !v2) continue;
+    if (!adj.has(ld.v1)) adj.set(ld.v1, []);
+    if (!adj.has(ld.v2)) adj.set(ld.v2, []);
+    adj.get(ld.v1)!.push({ angle: Math.atan2(v2.y - v1.y, v2.x - v1.x), vid: ld.v2, ldId });
+    adj.get(ld.v2)!.push({ angle: Math.atan2(v1.y - v2.y, v1.x - v2.x), vid: ld.v1, ldId });
+  }
+  for (const edges of adj.values()) {
+    edges.sort((a, b) => a.angle - b.angle);
   }
 
-  // Trace loops by consuming undirected edges
-  const usedEdges = new Set<string>();
+  // Hierholzer's algorithm per connected component
+  const usedLd = new Set<string>();
   const loops: string[][] = [];
 
-  function edgeKey(a: string, b: string): string {
-    return a < b ? `${a}|${b}` : `${b}|${a}`;
-  }
+  for (const startVid of adj.keys()) {
+    if (!adj.get(startVid)!.some(e => !usedLd.has(e.ldId))) continue;
 
-  for (const [startA, neighbors] of adj) {
-    for (const startB of neighbors) {
-      const ek = edgeKey(startA, startB);
-      if (usedEdges.has(ek)) continue;
-      usedEdges.add(ek);
+    const circuit: string[] = [];
+    const stack: string[] = [startVid];
+    const ptr = new Map<string, number>();
 
-      const chain: string[] = [startA];
-      let cur = startB;
-
-      for (let i = 0; i < adj.size + 1; i++) {
-        if (cur === startA) break;
-        chain.push(cur);
-        const nexts = [...(adj.get(cur) || [])].filter(n => !usedEdges.has(edgeKey(cur, n)));
-        if (!nexts.length) break;
-        usedEdges.add(edgeKey(cur, nexts[0]));
-        cur = nexts[0];
+    while (stack.length > 0) {
+      const v = stack[stack.length - 1];
+      const edges = adj.get(v)!;
+      let p = ptr.get(v) ?? 0;
+      while (p < edges.length && usedLd.has(edges[p].ldId)) p++;
+      if (p < edges.length) {
+        usedLd.add(edges[p].ldId);
+        ptr.set(v, p + 1);
+        stack.push(edges[p].vid);
+      } else {
+        ptr.set(v, p);
+        circuit.push(stack.pop()!);
       }
-
-      if (chain.length >= 3 && cur === startA) loops.push(chain);
     }
+
+    circuit.reverse();
+    if (circuit.length > 1 && circuit[0] === circuit[circuit.length - 1]) {
+      circuit.pop();
+    }
+    if (circuit.length >= 3) loops.push(circuit);
   }
 
   return loops;
