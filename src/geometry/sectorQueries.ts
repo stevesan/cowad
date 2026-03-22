@@ -1,5 +1,8 @@
 import type { Linedef } from '../types';
-import { pointInSector } from './cycleFinder';
+import { maps } from '../state/appState';
+import { vertexToLinedefs } from '../state/indices';
+import { buildSectorLoopIds, buildSectorPoly, pointInSector } from './cycleFinder';
+import { polyArea } from './hitTest';
 
 /** Find an existing linedef connecting two vertices; report direction. */
 export function findExistingLinedef(
@@ -42,6 +45,57 @@ export function mergeWouldDuplicate(
   }
   for (const c of neighborsOfA) {
     if (c !== vidB && neighborsOfB.has(c)) return true;
+  }
+  return false;
+}
+
+function collectSectorsFromVertex(vid: string): Set<string> {
+  const sectors = new Set<string>();
+  const lds = vertexToLinedefs.get(vid);
+  if (!lds) return sectors;
+  for (const ldId of lds) {
+    const ld = maps.linedefs.get(ldId);
+    if (!ld) continue;
+    for (const sdId of [ld.frontSide, ld.backSide]) {
+      if (!sdId) continue;
+      const sd = maps.sidedefs.get(sdId);
+      if (sd?.sector) sectors.add(sd.sector);
+    }
+  }
+  return sectors;
+}
+
+/**
+ * Find all sectors whose boundary loop contains both vertex IDs.
+ * Returns array of { sid, area } sorted by area ascending.
+ */
+export function findSectorsContainingBothVertices(
+  vid1: string, vid2: string,
+): { sid: string; area: number }[] {
+  const candidates = collectSectorsFromVertex(vid1);
+  const results: { sid: string; area: number }[] = [];
+  for (const sid of candidates) {
+    for (const loop of buildSectorLoopIds(sid)) {
+      if (loop.includes(vid1) && loop.includes(vid2)) {
+        const poly = buildSectorPoly(sid);
+        if (poly) results.push({ sid, area: polyArea(poly) });
+        break;
+      }
+    }
+  }
+  results.sort((a, b) => a.area - b.area);
+  return results;
+}
+
+/**
+ * Check if any sector's boundary loop contains both vertex IDs.
+ */
+export function anyBoundaryContainsBoth(vid1: string, vid2: string): boolean {
+  const candidates = collectSectorsFromVertex(vid1);
+  for (const sid of candidates) {
+    for (const loop of buildSectorLoopIds(sid)) {
+      if (loop.includes(vid1) && loop.includes(vid2)) return true;
+    }
   }
   return false;
 }

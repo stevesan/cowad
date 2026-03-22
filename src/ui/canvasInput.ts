@@ -10,7 +10,7 @@ import { s2w, snap } from '../canvas/transforms';
 import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { VERTEX_PICK_PX, LINEDEF_PICK_PX, THING_PICK_PX } from '../config/ux';
 import { buildSectorPoly, buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
-import { findSectorsContainingBothVertices, anyBoundaryContainsBoth } from '../state/indices';
+import { findSectorsContainingBothVertices, anyBoundaryContainsBoth } from '../geometry/sectorQueries';
 import { placeThing, deleteSelected, deleteMultiSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint, mergeVertices, mergeSectors } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
@@ -170,7 +170,6 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
       // Collect all sectors whose boundary loops contain both endpoints
       const candidates = findSectorsContainingBothVertices(
         first.existingId!, last.existingId!,
-        buildSectorLoopIds, buildSectorPoly, polyArea,
       );
 
       // Determine split vs adjacent: a split has new chain vertices INSIDE the sector
@@ -289,7 +288,7 @@ function handleDrawClick(wx: number, wy: number): void {
     }
     // For non-split polygons, also validate closing edge (click → first)
     // For splits the closing edge runs along the sector boundary, not through free space
-    const isSplit = anyBoundaryContainsBoth(first.existingId!, clickExisting!, buildSectorLoopIds);
+    const isSplit = anyBoundaryContainsBoth(first.existingId!, clickExisting!);
     if (!isSplit && !validateNewEdge(clickX, clickY, first.x, first.y)) {
       showToast('Closing edge would intersect'); return;
     }

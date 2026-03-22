@@ -471,10 +471,10 @@ function expandMissingEdges(chain: DrawVertex[]): DrawVertex[] {
   return result;
 }
 
-export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void> {
+export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<string | null> {
   chain = expandMissingEdges(chain);
   const n = chain.length;
-  if (n < 3) return;
+  if (n < 3) return null;
 
   beginAction();
 
@@ -616,6 +616,7 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
   setSelected({ type: 'sector', id: sid });
   triggerRenderPanel();
   endAction();
+  return sid;
 }
 
 export async function splitSector(chain: DrawVertex[], sectorId: string): Promise<void> {

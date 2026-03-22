@@ -125,118 +125,86 @@ describe('sector drawing', () => {
       { x: 50, y: 100 },
     ];
 
-    await createSectorFromPolygon(chain);
+    const sectorId = await createSectorFromPolygon(chain);
+    expect(sectorId).toBeTruthy();
 
-    // Should have 3 vertices
     expect(maps.vertices.size).toBe(3);
-
-    // Should have 1 sector
     expect(maps.sectors.size).toBe(1);
-    const sectorId = [...maps.sectors.keys()][0];
-
-    // Should have 3 linedefs
     expect(maps.linedefs.size).toBe(3);
-
-    // Should have 3 sidedefs (one per linedef, single-sided)
     expect(maps.sidedefs.size).toBe(3);
 
     // Every sidedef should reference the same sector
     const sectorRefs = [...maps.sidedefs.values()].map(sd => sd.sector);
     expect(sectorRefs.every(s => s === sectorId)).toBe(true);
 
-    // Every linedef should have a frontSide that exists in sidedefs
+    // Every linedef should be single-sided with a valid frontSide
     for (const [, ld] of maps.linedefs) {
       expect(ld.frontSide).toBeTruthy();
       expect(maps.sidedefs.has(ld.frontSide)).toBe(true);
-      // Single-sided: no backSide
       expect(ld.backSide).toBeFalsy();
     }
 
     // The sector boundary loop should contain all 3 vertices
-    const loops = buildSectorLoopIds(sectorId);
+    const loops = buildSectorLoopIds(sectorId!);
     expect(loops.length).toBe(1);
     expect(loops[0].length).toBe(3);
 
-    // The sector polygon should be valid
-    const poly = buildSectorPoly(sectorId);
+    const poly = buildSectorPoly(sectorId!);
     expect(poly).not.toBeNull();
     expect(poly!.length).toBe(3);
   });
 
   it('split square then draw adjacent sector across the split', async () => {
-    // Step 1: Create square ABCD (clockwise in y-up coords)
-    //   A(0,100) → B(100,100) → C(100,0) → D(0,0)
-    const squareChain: DrawVertex[] = [
+    // Create square ABCD (clockwise in y-up coords)
+    const squareSid = await createSectorFromPolygon([
       { x: 0, y: 100 },     // A
       { x: 100, y: 100 },   // B
       { x: 100, y: 0 },     // C
       { x: 0, y: 0 },       // D
-    ];
-    await createSectorFromPolygon(squareChain);
-
-    expect(maps.sectors.size).toBe(1);
+    ]);
+    expect(squareSid).toBeTruthy();
     expect(maps.vertices.size).toBe(4);
-    expect(maps.linedefs.size).toBe(4);
 
     const vidA = findVertexAt(0, 100)!;
     const vidB = findVertexAt(100, 100)!;
     const vidC = findVertexAt(100, 0)!;
     const vidD = findVertexAt(0, 0)!;
-    expect(vidA).toBeTruthy();
-    expect(vidB).toBeTruthy();
-    expect(vidC).toBeTruthy();
-    expect(vidD).toBeTruthy();
 
-    const originalSid = [...maps.sectors.keys()][0];
-
-    // Step 2: Split with diagonal from A to C
-    const splitChain: DrawVertex[] = [
+    // Split with diagonal from A to C
+    await splitSector([
       { x: 0, y: 100, existingId: vidA },
       { x: 100, y: 0, existingId: vidC },
-    ];
-    await splitSector(splitChain, originalSid);
+    ], squareSid!);
 
     expect(maps.sectors.size).toBe(2);
     expect(maps.vertices.size).toBe(4);
     expect(maps.linedefs.size).toBe(5); // 4 original + 1 diagonal
 
     // Verify: one sector has boundary {A,B,C}, the other {A,C,D}
-    const sids = [...maps.sectors.keys()];
-    const loopSets = sids.map(sid =>
-      buildSectorLoopIds(sid).map(l => new Set(l))
-    );
+    const hasLoop = (sid: string, verts: string[]) =>
+      buildSectorLoopIds(sid).some(l =>
+        l.length === verts.length && verts.every(v => l.includes(v)));
 
-    const hasVerts = (loops: Set<string>[], verts: string[]) =>
-      loops.some(l => l.size === verts.length && verts.every(v => l.has(v)));
+    const [sid0, sid1] = [...maps.sectors.keys()];
+    expect(hasLoop(sid0, [vidA, vidB, vidC]) || hasLoop(sid1, [vidA, vidB, vidC])).toBe(true);
+    expect(hasLoop(sid0, [vidA, vidC, vidD]) || hasLoop(sid1, [vidA, vidC, vidD])).toBe(true);
 
-    expect(hasVerts(loopSets[0], [vidA, vidB, vidC]) ||
-           hasVerts(loopSets[1], [vidA, vidB, vidC])).toBe(true);
-    expect(hasVerts(loopSets[0], [vidA, vidC, vidD]) ||
-           hasVerts(loopSets[1], [vidA, vidC, vidD])).toBe(true);
-
-    // Step 3: Draw new sector A → E(outside) → C
-    //   E(50,200) is above and outside the square
-    //   The closing edge C→A overlaps the two-sided diagonal,
-    //   so expandMissingEdges should route through B instead.
-    const newChain: DrawVertex[] = [
+    // Draw new sector A → E(outside) → C
+    // The closing edge C→A overlaps the two-sided diagonal,
+    // so expandMissingEdges should route through B instead.
+    const newSid = await createSectorFromPolygon([
       { x: 0, y: 100, existingId: vidA },
       { x: 200, y: 200 },                    // E — new, outside
       { x: 100, y: 0, existingId: vidC },
-    ];
-    await createSectorFromPolygon(newChain);
-
+    ]);
+    expect(newSid).toBeTruthy();
     expect(maps.sectors.size).toBe(3);
-
-    const vidE = findVertexAt(200, 200)!;
-    expect(vidE).toBeTruthy();
     expect(maps.vertices.size).toBe(5);
 
-    // Find the newest sector
-    const newSid = [...maps.sectors.keys()].find(s => !sids.includes(s))!;
-    expect(newSid).toBeTruthy();
+    const vidE = findVertexAt(200, 200)!;
 
     // The new sector's boundary should be {A, E, C, B}
-    const newLoops = buildSectorLoopIds(newSid);
+    const newLoops = buildSectorLoopIds(newSid!);
     expect(newLoops.length).toBe(1);
     const newLoop = new Set(newLoops[0]);
     expect(newLoop.size).toBe(4);
@@ -248,47 +216,34 @@ describe('sector drawing', () => {
 
   it('draw adjacent sector on unsplit square using non-adjacent vertices', async () => {
     // Create square ABCD (clockwise in y-up coords)
-    //   A(0,100) → B(100,100) → C(100,0) → D(0,0)
-    const squareChain: DrawVertex[] = [
+    await createSectorFromPolygon([
       { x: 0, y: 100 },     // A
       { x: 100, y: 100 },   // B
       { x: 100, y: 0 },     // C
       { x: 0, y: 0 },       // D
-    ];
-    await createSectorFromPolygon(squareChain);
-
-    expect(maps.sectors.size).toBe(1);
+    ]);
     expect(maps.vertices.size).toBe(4);
 
     const vidA = findVertexAt(0, 100)!;
     const vidB = findVertexAt(100, 100)!;
     const vidC = findVertexAt(100, 0)!;
-    const vidD = findVertexAt(0, 0)!;
-    const originalSid = [...maps.sectors.keys()][0];
 
     // Draw new sector A → E(outside) → C
-    // No direct linedef between C and A (they're opposite corners),
+    // No direct linedef between C and A (opposite corners),
     // so expandMissingEdges should route through B (smaller polygon)
-    const newChain: DrawVertex[] = [
+    const newSid = await createSectorFromPolygon([
       { x: 0, y: 100, existingId: vidA },
       { x: 200, y: 200 },                    // E — new, outside
       { x: 100, y: 0, existingId: vidC },
-    ];
-    await createSectorFromPolygon(newChain);
-
+    ]);
+    expect(newSid).toBeTruthy();
     expect(maps.sectors.size).toBe(2);
-
-    const vidE = findVertexAt(200, 200)!;
-    expect(vidE).toBeTruthy();
     expect(maps.vertices.size).toBe(5);
 
-    // Find the new sector
-    const newSid = [...maps.sectors.keys()].find(s => s !== originalSid)!;
-    expect(newSid).toBeTruthy();
+    const vidE = findVertexAt(200, 200)!;
 
     // The new sector's boundary should be {A, E, C, B}
-    // (expanded through B, not D, because that's the smaller polygon)
-    const newLoops = buildSectorLoopIds(newSid);
+    const newLoops = buildSectorLoopIds(newSid!);
     expect(newLoops.length).toBe(1);
     const newLoop = new Set(newLoops[0]);
     expect(newLoop.size).toBe(4);
