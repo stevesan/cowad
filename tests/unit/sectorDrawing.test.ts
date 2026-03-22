@@ -245,4 +245,56 @@ describe('sector drawing', () => {
     expect(newLoop.has(vidC)).toBe(true);
     expect(newLoop.has(vidB)).toBe(true);
   });
+
+  it('draw adjacent sector on unsplit square using non-adjacent vertices', async () => {
+    // Create square ABCD (clockwise in y-up coords)
+    //   A(0,100) → B(100,100) → C(100,0) → D(0,0)
+    const squareChain: DrawVertex[] = [
+      { x: 0, y: 100 },     // A
+      { x: 100, y: 100 },   // B
+      { x: 100, y: 0 },     // C
+      { x: 0, y: 0 },       // D
+    ];
+    await createSectorFromPolygon(squareChain);
+
+    expect(maps.sectors.size).toBe(1);
+    expect(maps.vertices.size).toBe(4);
+
+    const vidA = findVertexAt(0, 100)!;
+    const vidB = findVertexAt(100, 100)!;
+    const vidC = findVertexAt(100, 0)!;
+    const vidD = findVertexAt(0, 0)!;
+    const originalSid = [...maps.sectors.keys()][0];
+
+    // Draw new sector A → E(outside) → C
+    // No direct linedef between C and A (they're opposite corners),
+    // so expandMissingEdges should route through B (smaller polygon)
+    const newChain: DrawVertex[] = [
+      { x: 0, y: 100, existingId: vidA },
+      { x: 200, y: 200 },                    // E — new, outside
+      { x: 100, y: 0, existingId: vidC },
+    ];
+    await createSectorFromPolygon(newChain);
+
+    expect(maps.sectors.size).toBe(2);
+
+    const vidE = findVertexAt(200, 200)!;
+    expect(vidE).toBeTruthy();
+    expect(maps.vertices.size).toBe(5);
+
+    // Find the new sector
+    const newSid = [...maps.sectors.keys()].find(s => s !== originalSid)!;
+    expect(newSid).toBeTruthy();
+
+    // The new sector's boundary should be {A, E, C, B}
+    // (expanded through B, not D, because that's the smaller polygon)
+    const newLoops = buildSectorLoopIds(newSid);
+    expect(newLoops.length).toBe(1);
+    const newLoop = new Set(newLoops[0]);
+    expect(newLoop.size).toBe(4);
+    expect(newLoop.has(vidA)).toBe(true);
+    expect(newLoop.has(vidE)).toBe(true);
+    expect(newLoop.has(vidC)).toBe(true);
+    expect(newLoop.has(vidB)).toBe(true);
+  });
 });
