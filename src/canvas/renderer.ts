@@ -193,7 +193,7 @@ function drawPolygonPreview(): void {
 
   // Show magnetic snap circle before first click
   if (drawPoints.length === 0) {
-    const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y, 24 / zoom);
+    const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y, 12 / zoom);
     if (nearVid) {
       const v = maps.vertices.get(nearVid)!;
       const s = w2s(v.x, v.y);
@@ -209,7 +209,7 @@ function drawPolygonPreview(): void {
 
   // Compute snap target in world coords
   let targetX = snap(mouseWorld.x), targetY = snap(mouseWorld.y);
-  const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y, 24 / zoom);
+  const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y, 12 / zoom);
   let snappedToExisting = false;
   if (nearVid) {
     const v = maps.vertices.get(nearVid)!;

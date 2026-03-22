@@ -239,7 +239,7 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
 
 function handleDrawClick(wx: number, wy: number): void {
   const swx = snap(wx), swy = snap(wy);
-  const existingVid = nearestVertex(wx, wy, 24 / zoom);
+  const existingVid = nearestVertex(wx, wy, 12 / zoom);
 
   let clickX: number, clickY: number;
   let clickExisting: string | null = null;
@@ -371,7 +371,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
 
     if (tool === 'select') {
       const wx = mouseWorld.x, wy = mouseWorld.y;
-      const vid = nearestVertex(wx, wy, 24 / zoom);
+      const vid = nearestVertex(wx, wy, 12 / zoom);
       const tid = vid === null ? nearestThing(wx, wy, 48 / zoom) : null;
       const lid = vid === null && tid === null ? nearestLinedef(wx, wy, 16 / zoom) : null;
       let h: Selection | null = null;
@@ -413,7 +413,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     const { x: wx, y: wy } = s2w(sx, sy);
 
     if (tool === 'select') {
-      const vid = nearestVertex(wx, wy, 24 / zoom);
+      const vid = nearestVertex(wx, wy, 12 / zoom);
       const tid = nearestThing(wx, wy, 48 / zoom);
       const lid = nearestLinedef(wx, wy, 16 / zoom);
 
