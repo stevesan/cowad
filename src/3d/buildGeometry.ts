@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { maps } from '../state/appState';
 import { buildSectorPolys } from '../geometry/cycleFinder';
 import { pointInPoly } from '../geometry/hitTest';
+import { signedArea2 } from '../geometry/polygonMath';
 import { getTextureDataUrl, isWadLoaded, getTextures, getSpritePrefixEntry } from '../wad/textureLoader';
 import { THINGS, THING_SPRITE } from '../config/constants';
 import { CAT_COLOR } from '../config/ux';
@@ -60,15 +61,6 @@ function makeMaterial(texName: string, light: number): THREE.MeshBasicMaterial {
 
 // ── Floors & Ceilings ──
 
-function signedArea(pts: { x: number; y: number }[]): number {
-  let a = 0;
-  for (let i = 0; i < pts.length; i++) {
-    const j = (i + 1) % pts.length;
-    a += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
-  }
-  return a / 2;
-}
-
 export function buildFloorsCeilings(group: THREE.Group): void {
   maps.sectors.forEach((sec, sid) => {
     const loops = buildSectorPolys(sid);
@@ -78,13 +70,13 @@ export function buildFloorsCeilings(group: THREE.Group): void {
     let outerIdx = 0;
     let maxArea = 0;
     for (let i = 0; i < loops.length; i++) {
-      const a = Math.abs(signedArea(loops[i]));
+      const a = Math.abs(signedArea2(loops[i]));
       if (a > maxArea) { maxArea = a; outerIdx = i; }
     }
 
     const outerPts = loops[outerIdx];
     // Ensure CCW for outer boundary
-    const outerArea = signedArea(outerPts);
+    const outerArea = signedArea2(outerPts);
     const outer = outerArea < 0 ? [...outerPts].reverse() : outerPts;
 
     const shape = new THREE.Shape();
@@ -95,7 +87,7 @@ export function buildFloorsCeilings(group: THREE.Group): void {
     for (let i = 0; i < loops.length; i++) {
       if (i === outerIdx) continue;
       const holePts = loops[i];
-      const holeArea = signedArea(holePts);
+      const holeArea = signedArea2(holePts);
       // Holes should be CW (negative area)
       const hole = holeArea > 0 ? [...holePts].reverse() : holePts;
       const path = new THREE.Path();

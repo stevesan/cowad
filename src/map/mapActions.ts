@@ -1,7 +1,9 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, mouseWorld, triggerRenderPanel, triggerDraw } from '../state/appState';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
-import { pointInPoly, polyArea } from '../geometry/hitTest';
+import { pointInPoly } from '../geometry/hitTest';
+import { isCCW, computeTestPoint, buildSplitPaths } from '../geometry/polygonMath';
+import { findExistingLinedef, findEnclosingSector, mergeWouldDuplicate } from '../geometry/sectorQueries';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { getSelectedThingType } from '../ui/thingBrowser';
@@ -84,33 +86,16 @@ export function mergeVertices(): void {
   if (!vA || !vB) return;
 
   // Find the linedef connecting them (they must be adjacent)
-  let connectingLid: string | null = null;
-  maps.linedefs.forEach((ld, lid) => {
-    if ((ld.v1 === vidA && ld.v2 === vidB) || (ld.v1 === vidB && ld.v2 === vidA)) {
-      connectingLid = lid;
-    }
-  });
-  if (!connectingLid) {
+  const connecting = findExistingLinedef(maps.linedefs, vidA, vidB);
+  if (!connecting) {
     showToast('Vertices must be connected by a linedef');
     return;
   }
+  const connectingLid = connecting.ldId;
 
-  // Safety check: after merging A into B, would any two linedefs share both vertices?
-  // For each linedef A-C (where C != B), check if a linedef B-C already exists
-  const neighborsOfA = new Set<string>();
-  const neighborsOfB = new Set<string>();
-  maps.linedefs.forEach((ld, lid) => {
-    if (lid === connectingLid) return;
-    if (ld.v1 === vidA) neighborsOfA.add(ld.v2);
-    if (ld.v2 === vidA) neighborsOfA.add(ld.v1);
-    if (ld.v1 === vidB) neighborsOfB.add(ld.v2);
-    if (ld.v2 === vidB) neighborsOfB.add(ld.v1);
-  });
-  for (const c of neighborsOfA) {
-    if (c !== vidB && neighborsOfB.has(c)) {
-      showToast('Merge would create duplicate linedefs');
-      return;
-    }
+  if (mergeWouldDuplicate(maps.linedefs, vidA, vidB, connectingLid)) {
+    showToast('Merge would create duplicate linedefs');
+    return;
   }
 
   beginAction();
@@ -435,13 +420,8 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
     }
   }
 
-  // 2. Compute winding order (positive signed area = CCW)
-  let signedArea2 = 0;
-  for (let i = 0; i < n; i++) {
-    const a = chain[i], b = chain[(i + 1) % n];
-    signedArea2 += a.x * b.y - b.x * a.y;
-  }
-  const isCCW = signedArea2 > 0;
+  // 2. Compute winding order
+  const ccw = isCCW(chain);
 
   // 3. Find or create linedefs for each edge; detect template sector from shared lines
   let templateSector: Record<string, any> | null = null;
@@ -451,18 +431,12 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
 
   for (let i = 0; i < n; i++) {
     const va = vertexIds[i], vb = vertexIds[(i + 1) % n];
-    let existingLdId: string | null = null;
-    let sameDir = false;
+    const existing = findExistingLinedef(maps.linedefs, va, vb);
 
-    maps.linedefs.forEach((ld, lid) => {
-      if (ld.v1 === va && ld.v2 === vb) { existingLdId = lid; sameDir = true; }
-      else if (ld.v1 === vb && ld.v2 === va) { existingLdId = lid; sameDir = false; }
-    });
-
-    if (existingLdId) {
-      edges.push({ ldId: existingLdId, isNew: false, sameDirection: sameDir });
+    if (existing) {
+      edges.push({ ldId: existing.ldId, isNew: false, sameDirection: existing.sameDirection });
       if (!templateSector) {
-        const ld = maps.linedefs.get(existingLdId)!;
+        const ld = maps.linedefs.get(existing.ldId)!;
         const sdId = ld.frontSide || ld.backSide;
         const sd = sdId ? maps.sidedefs.get(sdId) : null;
         if (sd?.sector) {
@@ -472,8 +446,8 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
       }
     } else {
       // Orient new linedef so front side faces polygon interior
-      const v1 = isCCW ? vb : va;
-      const v2 = isCCW ? va : vb;
+      const v1 = ccw ? vb : va;
+      const v2 = ccw ? va : vb;
       const ldVal = { v1, v2, flags: 1 };
       const ref = mapRef('linedefs').push(ldVal);
       record(`map/linedefs/${ref.key}`, null, ldVal);
@@ -483,36 +457,8 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
   }
 
   // 4. Always find enclosing sector (needed for correct topology even when sharing lines)
-  //    Use an interior non-boundary vertex to avoid the test point landing inside a
-  //    neighbor sector that shares edges (which would pick the wrong enclosing sector).
-  let enclosingSectorId: string | null = null;
-  {
-    let testX = 0, testY = 0;
-    let foundNew = false;
-    for (let i = 1; i < n - 1; i++) {
-      if (!chain[i].existingId) {
-        testX = chain[i].x; testY = chain[i].y;
-        foundNew = true;
-        break;
-      }
-    }
-    if (!foundNew) {
-      // Fallback: centroid of all vertices
-      for (const pt of chain) { testX += pt.x; testY += pt.y; }
-      testX /= n; testY /= n;
-    }
-    let bestArea = Infinity;
-    maps.sectors.forEach((sec, secId) => {
-      const poly = buildSectorPoly(secId);
-      if (poly && pointInPoly(testX, testY, poly)) {
-        const a = polyArea(poly);
-        if (a < bestArea) {
-          bestArea = a;
-          enclosingSectorId = secId;
-        }
-      }
-    });
-  }
+  const testPt = computeTestPoint(chain);
+  let enclosingSectorId = findEnclosingSector(testPt.x, testPt.y, maps.sectors.keys(), buildSectorPoly);
   if (!templateSector && enclosingSectorId) {
     templateSector = { ...maps.sectors.get(enclosingSectorId)! };
   }
@@ -550,7 +496,7 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
         continue;
       }
       // One side free — use winding to pick the correct side
-      useFront = edge.sameDirection !== isCCW;
+      useFront = edge.sameDirection !== ccw;
       if (useFront && ld.frontSide) continue;
       if (!useFront && ld.backSide) continue;
     }
@@ -619,25 +565,7 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
   }
   if (!targetLoop) return;
 
-  const si = targetLoop.indexOf(startVid);
-  const ei = targetLoop.indexOf(endVid);
-  const loopLen = targetLoop.length;
-
-  // path1: si→ei forward in loop (gets new sector)
-  const path1: string[] = [];
-  for (let i = si; ; ) {
-    path1.push(targetLoop[i]);
-    if (i === ei) break;
-    i = (i + 1) % loopLen;
-  }
-
-  // path2: ei→si forward in loop (keeps original sector)
-  const path2: string[] = [];
-  for (let i = ei; ; ) {
-    path2.push(targetLoop[i]);
-    if (i === si) break;
-    i = (i + 1) % loopLen;
-  }
+  const { path1, path2 } = buildSplitPaths(targetLoop, startVid, endVid);
 
   beginAction();
 
@@ -665,19 +593,18 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
 
   // 3. Reassign path1 edges: change sidedefs from original to new sector
   for (let i = 0; i < path1.length - 1; i++) {
-    const va = path1[i], vb = path1[i + 1];
-    maps.linedefs.forEach((ld, _lid) => {
-      if ((ld.v1 === va && ld.v2 === vb) || (ld.v1 === vb && ld.v2 === va)) {
-        for (const sdId of [ld.frontSide, ld.backSide]) {
-          if (!sdId) continue;
-          const sd = maps.sidedefs.get(sdId);
-          if (sd && sd.sector === sectorId) {
-            record(`map/sidedefs/${sdId}`, { ...sd }, { ...sd, sector: newSid });
-            mapRef('sidedefs').child(sdId).update({ sector: newSid });
-          }
-        }
+    const found = findExistingLinedef(maps.linedefs, path1[i], path1[i + 1]);
+    if (!found) continue;
+    const ld = maps.linedefs.get(found.ldId);
+    if (!ld) continue;
+    for (const sdId of [ld.frontSide, ld.backSide]) {
+      if (!sdId) continue;
+      const sd = maps.sidedefs.get(sdId);
+      if (sd && sd.sector === sectorId) {
+        record(`map/sidedefs/${sdId}`, { ...sd }, { ...sd, sector: newSid });
+        mapRef('sidedefs').child(sdId).update({ sector: newSid });
       }
-    });
+    }
   }
 
   // 4. Create chain linedefs (two-sided: front=original, back=new)
@@ -685,11 +612,7 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
     const va = chainVids[i], vb = chainVids[i + 1];
 
     // Skip if linedef already exists between these vertices
-    let exists = false;
-    maps.linedefs.forEach(ld => {
-      if ((ld.v1 === va && ld.v2 === vb) || (ld.v1 === vb && ld.v2 === va)) exists = true;
-    });
-    if (exists) continue;
+    if (findExistingLinedef(maps.linedefs, va, vb)) continue;
 
     // Orient in chain direction: front (right) = original sector, back (left) = new sector
     const ldVal: any = { v1: va, v2: vb, flags: 4 };
@@ -738,19 +661,18 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
 
     if (pointInPoly(cx, cy, newSecPoly)) {
       for (let i = 0; i < holeLoop.length; i++) {
-        const va = holeLoop[i], vb = holeLoop[(i + 1) % holeLoop.length];
-        maps.linedefs.forEach(ld => {
-          if ((ld.v1 === va && ld.v2 === vb) || (ld.v1 === vb && ld.v2 === va)) {
-            for (const sdId of [ld.frontSide, ld.backSide]) {
-              if (!sdId) continue;
-              const sd = maps.sidedefs.get(sdId);
-              if (sd && sd.sector === sectorId) {
-                record(`map/sidedefs/${sdId}`, { ...sd }, { ...sd, sector: newSid });
-                mapRef('sidedefs').child(sdId).update({ sector: newSid });
-              }
-            }
+        const found = findExistingLinedef(maps.linedefs, holeLoop[i], holeLoop[(i + 1) % holeLoop.length]);
+        if (!found) continue;
+        const ld = maps.linedefs.get(found.ldId);
+        if (!ld) continue;
+        for (const sdId of [ld.frontSide, ld.backSide]) {
+          if (!sdId) continue;
+          const sd = maps.sidedefs.get(sdId);
+          if (sd && sd.sector === sectorId) {
+            record(`map/sidedefs/${sdId}`, { ...sd }, { ...sd, sector: newSid });
+            mapRef('sidedefs').child(sdId).update({ sector: newSid });
           }
-        });
+        }
       }
     }
   }
