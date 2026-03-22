@@ -1,6 +1,6 @@
 import type { DrawVertex, Point } from '../types';
 
-/** Doubled signed area (shoelace formula). Positive = CCW winding. */
+/** Doubled signed area (trapezoidal shoelace). Positive = CW, Negative = CCW (in y-up coords). */
 export function signedArea2(pts: Point[]): number {
   let a = 0;
   for (let i = 0, j = pts.length - 1; i < pts.length; j = i++)
@@ -9,7 +9,7 @@ export function signedArea2(pts: Point[]): number {
 }
 
 export function isCCW(pts: Point[]): boolean {
-  return signedArea2(pts) > 0;
+  return signedArea2(pts) < 0;
 }
 
 /**

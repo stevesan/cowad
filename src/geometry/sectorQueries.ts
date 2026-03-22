@@ -1,5 +1,4 @@
-import { pointInPoly, polyArea } from './hitTest';
-import type { Linedef, Point } from '../types';
+import type { Linedef } from '../types';
 
 /** Find an existing linedef connecting two vertices; report direction. */
 export function findExistingLinedef(
@@ -12,21 +11,16 @@ export function findExistingLinedef(
   return null;
 }
 
-/** Find the smallest sector polygon enclosing a point. */
+/** Find which sector a point is inside (accounting for holes via even-odd rule). */
 export function findEnclosingSector(
   px: number, py: number,
   sectorIds: Iterable<string>,
-  buildSectorPoly: (sid: string) => Point[] | null,
+  pointInSector: (px: number, py: number, sid: string) => boolean,
 ): string | null {
-  let bestId: string | null = null, bestArea = Infinity;
   for (const sid of sectorIds) {
-    const poly = buildSectorPoly(sid);
-    if (poly && pointInPoly(px, py, poly)) {
-      const a = polyArea(poly);
-      if (a < bestArea) { bestArea = a; bestId = sid; }
-    }
+    if (pointInSector(px, py, sid)) return sid;
   }
-  return bestId;
+  return null;
 }
 
 /**

@@ -9,7 +9,7 @@ import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
 import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { VERTEX_PICK_PX, LINEDEF_PICK_PX, THING_PICK_PX } from '../config/ux';
-import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
+import { buildSectorPoly, buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
 import { findSectorsContainingBothVertices, anyBoundaryContainsBoth } from '../state/indices';
 import { placeThing, deleteSelected, deleteMultiSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint, mergeVertices, mergeSectors } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
@@ -177,12 +177,10 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
       let splitSectorId: string | null = null;
       for (const cand of candidates) {
         if (drawChain.length > 2) {
-          const poly = buildSectorPoly(cand.sid);
-          if (!poly) continue;
           // Check if any new (non-existing) vertex is inside this sector
           let anyNewInside = false;
           for (let i = 1; i < drawChain.length - 1; i++) {
-            if (!drawChain[i].existingId && pointInPoly(drawChain[i].x, drawChain[i].y, poly)) {
+            if (!drawChain[i].existingId && pointInSector(drawChain[i].x, drawChain[i].y, cand.sid)) {
               anyNewInside = true;
               break;
             }
@@ -381,8 +379,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       else if (lid !== null) h = { type: 'linedef', id: lid };
       else {
         maps.sectors.forEach((_, sid) => {
-          const poly = buildSectorPoly(sid);
-          if (poly && pointInPoly(wx, wy, poly)) h = { type: 'sector', id: sid };
+          if (pointInSector(wx, wy, sid)) h = { type: 'sector', id: sid };
         });
       }
       // Update active side when cursor moves over a selected linedef
@@ -468,8 +465,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         // Check for sector under cursor
         let sectorHit: string | null = null;
         maps.sectors.forEach((_, sid) => {
-          const poly = buildSectorPoly(sid);
-          if (poly && pointInPoly(wx, wy, poly)) sectorHit = sid;
+          if (pointInSector(wx, wy, sid)) sectorHit = sid;
         });
 
         if (sectorHit !== null && e.shiftKey) {
@@ -522,8 +518,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         // Tiny drag = click — try sector selection
         let found: string | null = null;
         maps.sectors.forEach((_, sid) => {
-          const poly = buildSectorPoly(sid);
-          if (poly && pointInPoly(start.x, start.y, poly)) found = sid;
+          if (pointInSector(start.x, start.y, sid)) found = sid;
         });
         if (found) select('sector', found);
       } else {
@@ -618,8 +613,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
       const pos = cam ?? mouseWorld;
       let insideSector = false;
       maps.sectors.forEach((_, sid) => {
-        const poly = buildSectorPoly(sid);
-        if (poly && pointInPoly(pos.x, pos.y, poly)) insideSector = true;
+        if (pointInSector(pos.x, pos.y, sid)) insideSector = true;
       });
       if (insideSector) launchWAD(pos.x, pos.y);
       else launchWAD();

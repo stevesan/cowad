@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { maps } from '../state/appState';
-import { buildSectorPolys } from '../geometry/cycleFinder';
-import { pointInPoly } from '../geometry/hitTest';
+import { buildSectorPolys, pointInSector } from '../geometry/cycleFinder';
 import { signedArea2 } from '../geometry/polygonMath';
 import { getTextureDataUrl, isWadLoaded, getTextures, getSpritePrefixEntry } from '../wad/textureLoader';
 import { THINGS, THING_SPRITE } from '../config/constants';
@@ -251,12 +250,8 @@ export function buildWalls(group: THREE.Group): void {
 function thingFloorHeight(wx: number, wy: number): number {
   let floorH = 0;
   maps.sectors.forEach((sec, sid) => {
-    const loops = buildSectorPolys(sid);
-    for (const poly of loops) {
-      if (poly.length >= 3 && pointInPoly(wx, wy, poly)) {
-        floorH = sec.floor ?? 0;
-        return;
-      }
+    if (pointInSector(wx, wy, sid)) {
+      floorH = sec.floor ?? 0;
     }
   });
   return floorH;

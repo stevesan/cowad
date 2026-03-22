@@ -71,6 +71,16 @@ export function buildSectorPoly(sid: string): Point[] | null {
   return best;
 }
 
+/** True if the point is inside the sector, accounting for holes (even-odd rule). */
+export function pointInSector(px: number, py: number, sid: string): boolean {
+  const loops = buildSectorPolys(sid);
+  let count = 0;
+  for (const loop of loops) {
+    if (pointInPoly(px, py, loop)) count++;
+  }
+  return (count & 1) === 1;
+}
+
 export function findEnclosingCycle(wx: number, wy: number): string[] | null {
   const adj = new Map<string, Set<string>>();
   maps.linedefs.forEach(ld => {

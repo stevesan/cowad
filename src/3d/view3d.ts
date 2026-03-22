@@ -5,8 +5,7 @@ import { renderPanel } from '../ui/propertiesPanel';
 import { draw } from '../canvas/renderer';
 import { showToast } from '../ui/toast';
 import { buildFloorsCeilings, buildWalls, buildThings, clearTexCache } from './buildGeometry';
-import { buildSectorPolys } from '../geometry/cycleFinder';
-import { pointInPoly } from '../geometry/hitTest';
+import { pointInSector } from '../geometry/cycleFinder';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { openTextureBrowser } from '../ui/textureBrowser';
 
@@ -286,12 +285,8 @@ const PLAYER_VIEW_HEIGHT = 41; // DOOM player eye height
 function floorHeightAt(wx: number, wy: number): number {
   let floorH = 0;
   maps.sectors.forEach((sec, sid) => {
-    const loops = buildSectorPolys(sid);
-    for (const poly of loops) {
-      if (poly.length >= 3 && pointInPoly(wx, wy, poly)) {
-        floorH = sec.floor ?? 0;
-        return;
-      }
+    if (pointInSector(wx, wy, sid)) {
+      floorH = sec.floor ?? 0;
     }
   });
   return floorH;
