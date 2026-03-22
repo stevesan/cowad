@@ -335,17 +335,19 @@ describe('sector drawing', () => {
     // Rebuild indices after manual mutation
     rebuildIndices();
 
-    // The single sector now has 6 edges forming a bowtie through V
+    // The single sector now has 6 edges forming a bowtie through V.
+    // Face traversal splits this into two triangle loops at the pinch vertex.
     const loops = buildSectorLoopIds(sid1!);
-    expect(loops.length).toBe(1);
-    expect(loops[0].length).toBe(6); // A, B, V, D, C, V (V visited twice)
+    expect(loops.length).toBe(2);
+    expect(loops[0].length).toBe(3);
+    expect(loops[1].length).toBe(3);
 
-    const loop = loops[0];
-    expect(loop.filter(v => v === vidV).length).toBe(2); // V appears twice
-    expect(loop).toContain(vidA);
-    expect(loop).toContain(vidB);
-    expect(loop).toContain(vidC);
-    expect(loop).toContain(vidD);
+    const allVerts = new Set([...loops[0], ...loops[1]]);
+    expect(allVerts.has(vidA)).toBe(true);
+    expect(allVerts.has(vidB)).toBe(true);
+    expect(allVerts.has(vidC)).toBe(true);
+    expect(allVerts.has(vidD)).toBe(true);
+    expect(allVerts.has(vidV)).toBe(true);
   });
 
   it('draw adjacent sector on unsplit square using non-adjacent vertices', async () => {

@@ -4,14 +4,16 @@ import { pointInPoly, polyArea } from './hitTest';
 import type { Point } from '../types';
 
 /** Return all boundary loops for a sector as vertex ID arrays.
- *  Uses Hierholzer's algorithm to correctly handle pinch vertices
- *  (vertices visited twice in a single boundary loop). */
+ *  Uses planar face traversal: at each vertex, edges are sorted by angle
+ *  and we always pick the next CW edge from the arrival direction. Each
+ *  directed half-edge belongs to exactly one face. The exterior (unbounded)
+ *  face of each connected component is identified and removed. */
 export function buildSectorLoopIds(sid: string): string[][] {
   const ldIds = getLinedefsForSector(sid);
   if (!ldIds.size) return [];
 
-  // Build adjacency: vertex → list of {angle, neighbor, ldId} sorted by angle
-  const adj = new Map<string, { angle: number; vid: string; ldId: string }[]>();
+  // Build adjacency: vertex → list of {angle, neighbor} sorted by angle (CCW)
+  const adj = new Map<string, { angle: number; vid: string }[]>();
   for (const ldId of ldIds) {
     const ld = maps.linedefs.get(ldId);
     if (!ld) continue;
@@ -20,47 +22,90 @@ export function buildSectorLoopIds(sid: string): string[][] {
     if (!v1 || !v2) continue;
     if (!adj.has(ld.v1)) adj.set(ld.v1, []);
     if (!adj.has(ld.v2)) adj.set(ld.v2, []);
-    adj.get(ld.v1)!.push({ angle: Math.atan2(v2.y - v1.y, v2.x - v1.x), vid: ld.v2, ldId });
-    adj.get(ld.v2)!.push({ angle: Math.atan2(v1.y - v2.y, v1.x - v2.x), vid: ld.v1, ldId });
+    adj.get(ld.v1)!.push({ angle: Math.atan2(v2.y - v1.y, v2.x - v1.x), vid: ld.v2 });
+    adj.get(ld.v2)!.push({ angle: Math.atan2(v1.y - v2.y, v1.x - v2.x), vid: ld.v1 });
   }
   for (const edges of adj.values()) {
     edges.sort((a, b) => a.angle - b.angle);
   }
 
-  // Hierholzer's algorithm per connected component
-  const usedLd = new Set<string>();
-  const loops: string[][] = [];
-
-  for (const startVid of adj.keys()) {
-    if (!adj.get(startVid)!.some(e => !usedLd.has(e.ldId))) continue;
-
-    const circuit: string[] = [];
-    const stack: string[] = [startVid];
-    const ptr = new Map<string, number>();
-
-    while (stack.length > 0) {
-      const v = stack[stack.length - 1];
-      const edges = adj.get(v)!;
-      let p = ptr.get(v) ?? 0;
-      while (p < edges.length && usedLd.has(edges[p].ldId)) p++;
-      if (p < edges.length) {
-        usedLd.add(edges[p].ldId);
-        ptr.set(v, p + 1);
-        stack.push(edges[p].vid);
-      } else {
-        ptr.set(v, p);
-        circuit.push(stack.pop()!);
+  // Find connected components and each component's rightmost vertex.
+  // The exterior face of each component is identified by the half-edge
+  // leaving the rightmost vertex (max x, break ties by max y) along
+  // its smallest-angle outgoing edge.
+  const compOf = new Map<string, number>();
+  let numComps = 0;
+  for (const v of adj.keys()) {
+    if (compOf.has(v)) continue;
+    const comp = numComps++;
+    const stack = [v];
+    while (stack.length) {
+      const u = stack.pop()!;
+      if (compOf.has(u)) continue;
+      compOf.set(u, comp);
+      for (const e of adj.get(u)!) {
+        if (!compOf.has(e.vid)) stack.push(e.vid);
       }
     }
-
-    circuit.reverse();
-    if (circuit.length > 1 && circuit[0] === circuit[circuit.length - 1]) {
-      circuit.pop();
-    }
-    if (circuit.length >= 3) loops.push(circuit);
   }
 
-  return loops;
+  const compRight = new Array<string>(numComps).fill('');
+  const compBestX = new Array(numComps).fill(-Infinity);
+  const compBestY = new Array(numComps).fill(-Infinity);
+  for (const [vid, comp] of compOf) {
+    const v = maps.vertices.get(vid)!;
+    if (v.x > compBestX[comp] || (v.x === compBestX[comp] && v.y > compBestY[comp])) {
+      compBestX[comp] = v.x; compBestY[comp] = v.y; compRight[comp] = vid;
+    }
+  }
+
+  const exteriorHEs = new Set<string>();
+  for (let c = 0; c < numComps; c++) {
+    const vid = compRight[c];
+    const edges = adj.get(vid)!;
+    exteriorHEs.add(vid + '|' + edges[0].vid);
+  }
+
+  // Planar face traversal: follow "next CW" half-edges.
+  const usedHE = new Set<string>();
+  const loops: string[][] = [];
+  const loopExterior: boolean[] = [];
+
+  for (const [vid, edges] of adj) {
+    for (const edge of edges) {
+      const startKey = vid + '|' + edge.vid;
+      if (usedHE.has(startKey)) continue;
+
+      const loop: string[] = [];
+      let isExterior = false;
+      let cur = vid, next = edge.vid;
+
+      for (;;) {
+        const he = cur + '|' + next;
+        if (exteriorHEs.has(he)) isExterior = true;
+        usedHE.add(he);
+        loop.push(cur);
+
+        // At 'next', find the edge back to 'cur' in the CCW-sorted list,
+        // then pick the previous entry (= next CW) as the outgoing edge.
+        const nextEdges = adj.get(next)!;
+        const arrIdx = nextEdges.findIndex(e => e.vid === cur);
+        const nextIdx = (arrIdx - 1 + nextEdges.length) % nextEdges.length;
+        cur = next;
+        next = nextEdges[nextIdx].vid;
+
+        if (cur === vid && next === edge.vid) break;
+        if (loop.length > ldIds.size * 2) break;
+      }
+
+      if (loop.length >= 3) {
+        loops.push(loop);
+        loopExterior.push(isExterior);
+      }
+    }
+  }
+
+  return loops.filter((_, i) => !loopExterior[i]);
 }
 
 /** Return all boundary loops for a sector (outer + holes). */
