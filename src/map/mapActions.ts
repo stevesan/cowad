@@ -1,9 +1,10 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, mouseWorld, triggerRenderPanel, triggerDraw } from '../state/appState';
-import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
-import { pointInPoly } from '../geometry/hitTest';
+import { buildSectorLoopIds } from '../geometry/cycleFinder';
+import { pointInPoly, polyArea } from '../geometry/hitTest';
 import { isCCW, computeTestPoint, buildSplitPaths } from '../geometry/polygonMath';
 import { findExistingLinedef, findEnclosingSector, mergeWouldDuplicate } from '../geometry/sectorQueries';
+import { findBoundaryPath } from '../state/indices';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { getSelectedThingType } from '../ui/thingBrowser';
@@ -401,7 +402,77 @@ export function deleteMultiSelected(): void {
   triggerDraw();
 }
 
+/**
+ * Expand a polygon chain by inserting intermediate boundary vertices
+ * between consecutive existing vertices that lack a usable direct linedef.
+ * Handles: (1) no direct linedef at all, (2) direct linedef with both sides occupied.
+ * When two boundary paths exist, picks the one creating the smaller polygon.
+ */
+function expandMissingEdges(chain: DrawVertex[]): DrawVertex[] {
+  const result: DrawVertex[] = [];
+  const n = chain.length;
+
+  for (let i = 0; i < n; i++) {
+    result.push(chain[i]);
+    const va = chain[i];
+    const vb = chain[(i + 1) % n];
+
+    if (!va.existingId || !vb.existingId) continue;
+    if (va.existingId === vb.existingId) continue;
+
+    // Check if direct linedef exists and is usable (has a free side)
+    const existing = findExistingLinedef(maps.linedefs, va.existingId, vb.existingId);
+    if (existing) {
+      const ld = maps.linedefs.get(existing.ldId);
+      if (ld && (!ld.frontSide || !ld.backSide)) continue; // has free side, OK
+      // Both sides occupied — fall through to find alternate path
+    } else {
+      // No direct linedef at all — fall through
+    }
+
+    // Try BFS in both directions to get two candidate paths
+    const fwd = findBoundaryPath(va.existingId, vb.existingId);
+    const rev = findBoundaryPath(vb.existingId, va.existingId);
+    const revReversed = rev ? [...rev].reverse() : null;
+
+    let intermediates: string[] | null = null;
+
+    if (fwd && fwd.length > 0 && revReversed && revReversed.length > 0
+        && fwd.join(',') !== revReversed.join(',')) {
+      // Two different paths — pick the one creating the smaller polygon
+      const buildPoly = (ints: string[]): Point[] => {
+        const pts: Point[] = [];
+        for (let j = 0; j < n; j++) {
+          pts.push({ x: chain[j].x, y: chain[j].y });
+          if (j === i) {
+            for (const vid of ints) {
+              const v = maps.vertices.get(vid);
+              if (v) pts.push(v);
+            }
+          }
+        }
+        return pts;
+      };
+      const areaFwd = polyArea(buildPoly(fwd));
+      const areaRev = polyArea(buildPoly(revReversed));
+      intermediates = areaFwd <= areaRev ? fwd : revReversed;
+    } else {
+      intermediates = (fwd && fwd.length > 0) ? fwd : revReversed;
+    }
+
+    if (intermediates) {
+      for (const vid of intermediates) {
+        const v = maps.vertices.get(vid);
+        if (v) result.push({ x: v.x, y: v.y, existingId: vid });
+      }
+    }
+  }
+
+  return result;
+}
+
 export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void> {
+  chain = expandMissingEdges(chain);
   const n = chain.length;
   if (n < 3) return;
 

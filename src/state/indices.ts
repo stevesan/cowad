@@ -183,3 +183,44 @@ function collectSectorsFromLinedef(ldId: string, out: Set<string>): void {
     if (sd?.sector) out.add(sd.sector);
   }
 }
+
+/**
+ * BFS from fromVid to toVid along the linedef graph.
+ * Returns intermediate vertex IDs (excluding both endpoints).
+ * Prefers walking single-sided (exterior) edges first.
+ */
+export function findBoundaryPath(fromVid: string, toVid: string): string[] | null {
+  for (const singleSidedOnly of [true, false]) {
+    const parent = new Map<string, string | null>();
+    parent.set(fromVid, null);
+    const queue: string[] = [fromVid];
+
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      const lds = vertexToLinedefs.get(cur);
+      if (!lds) continue;
+
+      for (const ldId of lds) {
+        const ld = maps.linedefs.get(ldId);
+        if (!ld) continue;
+        if (singleSidedOnly && ld.frontSide && ld.backSide) continue;
+        const neighbor = ld.v1 === cur ? ld.v2 : ld.v1;
+        if (parent.has(neighbor)) continue;
+        parent.set(neighbor, cur);
+        if (neighbor === toVid) {
+          const path: string[] = [];
+          let v = parent.get(toVid)!;
+          while (v !== null && v !== fromVid) {
+            path.push(v);
+            v = parent.get(v)!;
+          }
+          path.reverse();
+          return path;
+        }
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  return null;
+}
