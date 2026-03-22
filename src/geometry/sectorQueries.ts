@@ -1,4 +1,5 @@
 import type { Linedef } from '../types';
+import { pointInSector } from './cycleFinder';
 
 /** Find an existing linedef connecting two vertices; report direction. */
 export function findExistingLinedef(
@@ -15,7 +16,6 @@ export function findExistingLinedef(
 export function findEnclosingSector(
   px: number, py: number,
   sectorIds: Iterable<string>,
-  pointInSector: (px: number, py: number, sid: string) => boolean,
 ): string | null {
   for (const sid of sectorIds) {
     if (pointInSector(px, py, sid)) return sid;

@@ -1,6 +1,6 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, mouseWorld, triggerRenderPanel, triggerDraw } from '../state/appState';
-import { buildSectorPoly, buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
+import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
 import { pointInPoly } from '../geometry/hitTest';
 import { isCCW, computeTestPoint, buildSplitPaths } from '../geometry/polygonMath';
 import { findExistingLinedef, findEnclosingSector, mergeWouldDuplicate } from '../geometry/sectorQueries';
@@ -458,7 +458,7 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<void
 
   // 4. Always find enclosing sector (needed for correct topology even when sharing lines)
   const testPt = computeTestPoint(chain);
-  let enclosingSectorId = findEnclosingSector(testPt.x, testPt.y, maps.sectors.keys(), pointInSector);
+  let enclosingSectorId = findEnclosingSector(testPt.x, testPt.y, maps.sectors.keys());
   if (!templateSector && enclosingSectorId) {
     templateSector = { ...maps.sectors.get(enclosingSectorId)! };
   }
