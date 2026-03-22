@@ -619,9 +619,9 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<stri
   return sid;
 }
 
-export async function splitSector(chain: DrawVertex[], sectorId: string): Promise<void> {
+export async function splitSector(chain: DrawVertex[], sectorId: string): Promise<[string, string] | null> {
   const n = chain.length;
-  if (n < 2) return;
+  if (n < 2) return null;
 
   const startVid = chain[0].existingId!;
   const endVid = chain[n - 1].existingId!;
@@ -635,7 +635,7 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
       break;
     }
   }
-  if (!targetLoop) return;
+  if (!targetLoop) return null;
 
   const { path1, path2 } = buildSplitPaths(targetLoop, startVid, endVid);
 
@@ -763,4 +763,5 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
   setSelected({ type: 'sector', id: newSid });
   triggerRenderPanel();
   endAction();
+  return [sectorId, newSid];
 }

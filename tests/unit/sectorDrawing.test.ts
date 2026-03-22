@@ -172,10 +172,14 @@ describe('sector drawing', () => {
     const vidD = findVertexAt(0, 0)!;
 
     // Split with diagonal from A to C
-    await splitSector([
+    const splitResult = await splitSector([
       { x: 0, y: 100, existingId: vidA },
       { x: 100, y: 0, existingId: vidC },
     ], squareSid!);
+
+    expect(splitResult).not.toBeNull();
+    const [sid0, sid1] = splitResult!;
+    expect(sid0).toBe(squareSid);
 
     expect(maps.sectors.size).toBe(2);
     expect(maps.vertices.size).toBe(4);
@@ -186,7 +190,6 @@ describe('sector drawing', () => {
       buildSectorLoopIds(sid).some(l =>
         l.length === verts.length && verts.every(v => l.includes(v)));
 
-    const [sid0, sid1] = [...maps.sectors.keys()];
     expect(hasLoop(sid0, [vidA, vidB, vidC]) || hasLoop(sid1, [vidA, vidB, vidC])).toBe(true);
     expect(hasLoop(sid0, [vidA, vidC, vidD]) || hasLoop(sid1, [vidA, vidC, vidD])).toBe(true);
 
@@ -229,13 +232,14 @@ describe('sector drawing', () => {
     const vidC = findVertexAt(100, 0)!;
 
     // Split with diagonal A→C
-    await splitSector([
+    const splitResult = await splitSector([
       { x: 0, y: 100, existingId: vidA },
       { x: 100, y: 0, existingId: vidC },
     ], squareSid!);
 
+    expect(splitResult).not.toBeNull();
+    const [sid0, sid1] = splitResult!;
     expect(maps.sectors.size).toBe(2);
-    const [sid0, sid1] = [...maps.sectors.keys()];
 
     // Find the diagonal linedef (A-C)
     let diagLdId: string | null = null;
