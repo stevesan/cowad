@@ -1,8 +1,5 @@
 import type { ThingInfo } from '../types';
 
-export const GRID = 32;
-export const SNAP = 8;
-
 export const THINGS: Record<number, ThingInfo> = {
   1:    { name: 'Player 1 Start',   cat: 'player',  r: 16 },
   2:    { name: 'Player 2 Start',   cat: 'player',  r: 16 },
@@ -119,19 +116,6 @@ export const THINGS: Record<number, ThingInfo> = {
   88:   { name: 'Boss Brain',         cat: 'enemy', r: 16 },
   89:   { name: 'Spawn Shooter',      cat: 'enemy', r: 16 },
   87:   { name: 'Spawn Spot',         cat: 'enemy', r: 16 },
-};
-
-export const CAT_COLOR: Record<string, string> = {
-  player:  '#0f0',
-  enemy:   '#f44',
-  weapon:  '#fa0',
-  ammo:    '#f80',
-  health:  '#4af',
-  armor:   '#4ff',
-  key:     '#ff4',
-  powerup: '#f4f',
-  decor:   '#888',
-  gore:    '#a44',
 };
 
 export const THING_SPRITE: Record<number, string> = {

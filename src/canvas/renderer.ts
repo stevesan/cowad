@@ -1,10 +1,10 @@
 import { maps, selected, hovered, tool, mouseWorld, zoom, drawPoints, multiSelected, multiSelectType, boxSelectStart } from '../state/appState';
-import { GRID, THINGS, CAT_COLOR, THING_SPRITE } from '../config/constants';
+import { THINGS, THING_SPRITE } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
 import { getSpritePrefixEntry, isWadLoaded } from '../wad/textureLoader';
 import { buildSectorPoly, buildSectorPolys } from '../geometry/cycleFinder';
 import { nearestVertex } from '../geometry/hitTest';
-import { VERTEX_PICK_PX } from '../config/ux';
+import { VERTEX_PICK_PX, GRID, CAT_COLOR } from '../config/ux';
 
 let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;

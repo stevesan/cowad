@@ -1,4 +1,5 @@
-import { THINGS, CAT_COLOR, THING_SPRITE } from '../config/constants';
+import { THINGS, THING_SPRITE } from '../config/constants';
+import { CAT_COLOR } from '../config/ux';
 import { getSpritePrefixEntry } from '../wad/textureLoader';
 
 let selectedThingType = 1; // default Player 1 Start

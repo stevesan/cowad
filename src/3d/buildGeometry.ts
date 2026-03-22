@@ -3,7 +3,8 @@ import { maps } from '../state/appState';
 import { buildSectorPolys } from '../geometry/cycleFinder';
 import { pointInPoly } from '../geometry/hitTest';
 import { getTextureDataUrl, isWadLoaded, getTextures, getSpritePrefixEntry } from '../wad/textureLoader';
-import { THINGS, CAT_COLOR, THING_SPRITE } from '../config/constants';
+import { THINGS, THING_SPRITE } from '../config/constants';
+import { CAT_COLOR } from '../config/ux';
 
 // ── Texture cache ──
 
