@@ -1,7 +1,7 @@
-import { maps, zoom } from '../state/appState';
+import { maps } from '../state/appState';
 import type { Point } from '../types';
 
-export function nearestVertex(wx: number, wy: number, thresh: number = 24 / zoom): string | null {
+export function nearestVertex(wx: number, wy: number, thresh: number): string | null {
   let best: string | null = null, bestD = thresh;
   maps.vertices.forEach((v, id) => {
     const d = Math.hypot(v.x - wx, v.y - wy);
@@ -10,7 +10,7 @@ export function nearestVertex(wx: number, wy: number, thresh: number = 24 / zoom
   return best;
 }
 
-export function nearestLinedef(wx: number, wy: number, thresh: number = 16 / zoom): string | null {
+export function nearestLinedef(wx: number, wy: number, thresh: number): string | null {
   let best: string | null = null, bestD = thresh;
   maps.linedefs.forEach((ld, id) => {
     const v1 = maps.vertices.get(ld.v1), v2 = maps.vertices.get(ld.v2);
@@ -21,7 +21,7 @@ export function nearestLinedef(wx: number, wy: number, thresh: number = 16 / zoo
   return best;
 }
 
-export function nearestThing(wx: number, wy: number, thresh: number = 48 / zoom): string | null {
+export function nearestThing(wx: number, wy: number, thresh: number): string | null {
   let best: string | null = null, bestD = thresh;
   maps.things.forEach((th, id) => {
     const d = Math.hypot(th.x - wx, th.y - wy);
