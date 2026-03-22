@@ -8,6 +8,7 @@ import {
 import { mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
 import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
+import { VERTEX_PICK_PX, LINEDEF_PICK_PX, THING_PICK_PX } from '../config/ux';
 import { buildSectorPoly, buildSectorLoopIds } from '../geometry/cycleFinder';
 import { findSectorsContainingBothVertices, anyBoundaryContainsBoth } from '../state/indices';
 import { placeThing, deleteSelected, deleteMultiSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint, mergeVertices, mergeSectors } from '../map/mapActions';
@@ -239,7 +240,7 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
 
 function handleDrawClick(wx: number, wy: number): void {
   const swx = snap(wx), swy = snap(wy);
-  const existingVid = nearestVertex(wx, wy, 12 / zoom);
+  const existingVid = nearestVertex(wx, wy, VERTEX_PICK_PX / zoom);
 
   let clickX: number, clickY: number;
   let clickExisting: string | null = null;
@@ -323,7 +324,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     if (tool !== 'select') return;
     const { sx, sy } = getCanvasXY(e);
     const { x: wx, y: wy } = s2w(sx, sy);
-    const lid = nearestLinedef(wx, wy, 16 / zoom);
+    const lid = nearestLinedef(wx, wy, LINEDEF_PICK_PX / zoom);
     if (lid === null) return;
     splitLinedefAtPoint(lid, snap(wx), snap(wy));
     draw();
@@ -371,9 +372,9 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
 
     if (tool === 'select') {
       const wx = mouseWorld.x, wy = mouseWorld.y;
-      const vid = nearestVertex(wx, wy, 12 / zoom);
-      const tid = vid === null ? nearestThing(wx, wy, 48 / zoom) : null;
-      const lid = vid === null && tid === null ? nearestLinedef(wx, wy, 16 / zoom) : null;
+      const vid = nearestVertex(wx, wy, VERTEX_PICK_PX / zoom);
+      const tid = vid === null ? nearestThing(wx, wy, THING_PICK_PX / zoom) : null;
+      const lid = vid === null && tid === null ? nearestLinedef(wx, wy, LINEDEF_PICK_PX / zoom) : null;
       let h: Selection | null = null;
       if (vid !== null) h = { type: 'vertex', id: vid };
       else if (tid !== null) h = { type: 'thing', id: tid };
@@ -413,9 +414,9 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     const { x: wx, y: wy } = s2w(sx, sy);
 
     if (tool === 'select') {
-      const vid = nearestVertex(wx, wy, 12 / zoom);
-      const tid = nearestThing(wx, wy, 48 / zoom);
-      const lid = nearestLinedef(wx, wy, 16 / zoom);
+      const vid = nearestVertex(wx, wy, VERTEX_PICK_PX / zoom);
+      const tid = nearestThing(wx, wy, THING_PICK_PX / zoom);
+      const lid = nearestLinedef(wx, wy, LINEDEF_PICK_PX / zoom);
 
       if (vid !== null && e.shiftKey) {
         // Shift+click: toggle vertex in multiSelected
@@ -657,7 +658,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     }
     if (!is3DActive()) {
       if (e.key.toLowerCase() === 'c') {
-        const lid = nearestLinedef(mouseWorld.x, mouseWorld.y, 16 / zoom);
+        const lid = nearestLinedef(mouseWorld.x, mouseWorld.y, LINEDEF_PICK_PX / zoom);
         if (lid !== null) { splitLinedefAtPoint(lid, snap(mouseWorld.x), snap(mouseWorld.y)); draw(); }
         return;
       }

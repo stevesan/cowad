@@ -4,6 +4,7 @@ import { w2s, s2w, snap } from './transforms';
 import { getSpritePrefixEntry, isWadLoaded } from '../wad/textureLoader';
 import { buildSectorPoly, buildSectorPolys } from '../geometry/cycleFinder';
 import { nearestVertex } from '../geometry/hitTest';
+import { VERTEX_PICK_PX } from '../config/ux';
 
 let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
@@ -123,7 +124,7 @@ function drawVertices(): void {
     if (isHov && !isSel && !isMultiSel) {
       ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(s.x, s.y, VERTEX_PICK_PX, 0, Math.PI * 2); ctx.stroke();
     }
     ctx.fillStyle = (isSel || isMultiSel) ? '#ff0' : isHov ? '#fff' : '#0ff';
     const sz = isHov || isSel || isMultiSel ? 4 : 3;
@@ -193,13 +194,13 @@ function drawPolygonPreview(): void {
 
   // Show magnetic snap circle before first click
   if (drawPoints.length === 0) {
-    const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y, 12 / zoom);
+    const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y, VERTEX_PICK_PX / zoom);
     if (nearVid) {
       const v = maps.vertices.get(nearVid)!;
       const s = w2s(v.x, v.y);
       ctx.strokeStyle = '#0ff';
       ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.arc(s.x, s.y, 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(s.x, s.y, VERTEX_PICK_PX, 0, Math.PI * 2); ctx.stroke();
     }
     return;
   }
@@ -209,7 +210,7 @@ function drawPolygonPreview(): void {
 
   // Compute snap target in world coords
   let targetX = snap(mouseWorld.x), targetY = snap(mouseWorld.y);
-  const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y, 12 / zoom);
+  const nearVid = nearestVertex(mouseWorld.x, mouseWorld.y, VERTEX_PICK_PX / zoom);
   let snappedToExisting = false;
   if (nearVid) {
     const v = maps.vertices.get(nearVid)!;
@@ -287,7 +288,7 @@ function drawPolygonPreview(): void {
   } else if (snappedToExisting) {
     ctx.strokeStyle = '#0ff';
     ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.arc(sTarget.x, sTarget.y, 12, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(sTarget.x, sTarget.y, VERTEX_PICK_PX, 0, Math.PI * 2); ctx.stroke();
   }
 }
 
