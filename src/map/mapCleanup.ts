@@ -1,10 +1,11 @@
 import { maps } from '../state/appState';
 import { mapRef } from '../config/firebase';
+import { pointInSector } from '../geometry/cycleFinder';
 import { showToast } from '../ui/toast';
 
 export function cleanupMap(): void {
   const removed = { ld: 0, sd: 0, sec: 0, vt: 0 };
-  const fixed = { swap: 0, tex: 0 };
+  const fixed = { swap: 0, flip: 0, tex: 0 };
 
   maps.linedefs.forEach((ld, lid) => {
     if (!maps.vertices.has(ld.v1) || !maps.vertices.has(ld.v2)) {
@@ -23,6 +24,27 @@ export function cleanupMap(): void {
         flags: (ld.flags ?? 1) & ~4 | 1,
       });
       fixed.swap++;
+    }
+  });
+
+  // For single-sided linedefs, the frontSide sector must be on the RIGHT
+  // of v1→v2. Test a point slightly right of the midpoint against the sector.
+  maps.linedefs.forEach((ld, lid) => {
+    if (!ld.frontSide || ld.backSide) return;
+    const sd = maps.sidedefs.get(ld.frontSide);
+    if (!sd?.sector) return;
+    const v1 = maps.vertices.get(ld.v1)!;
+    const v2 = maps.vertices.get(ld.v2)!;
+    const dx = v2.x - v1.x, dy = v2.y - v1.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len === 0) return;
+    // Right normal of v1→v2 in y-up: (dy, -dx)
+    const eps = 0.1;
+    const rx = (v1.x + v2.x) / 2 + (dy / len) * eps;
+    const ry = (v1.y + v2.y) / 2 - (dx / len) * eps;
+    if (!pointInSector(rx, ry, sd.sector)) {
+      mapRef('linedefs').child(lid).update({ v1: ld.v2, v2: ld.v1 });
+      fixed.flip++;
     }
   });
 
@@ -69,6 +91,7 @@ export function cleanupMap(): void {
   if (removed.ld + removed.sd + removed.sec + removed.vt)
     parts.push(`removed ${removed.sec}s ${removed.sd}sd ${removed.ld}l ${removed.vt}v`);
   if (fixed.swap) parts.push(`${fixed.swap} back→front swaps`);
+  if (fixed.flip) parts.push(`${fixed.flip} facing flips`);
   if (fixed.tex)  parts.push(`${fixed.tex} texture fixes`);
   showToast(parts.length ? 'Cleaned: ' + parts.join(', ') : 'Map is clean');
 }
