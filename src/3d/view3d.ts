@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide, snapSize, multiSelected, multiSelectType, setMultiSelected } from '../state/appState';
+import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide, snapSize, multiSelected, multiSelectType, setMultiSelected, multiSelectedSides, setMultiSelectedSides } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { renderPanel } from '../ui/propertiesPanel';
 import { draw } from '../canvas/renderer';
@@ -127,10 +127,27 @@ function ensureInit(): void {
           if ((hitType === 'sector' || hitType === 'linedef') && e.shiftKey) {
             // Shift+click: multi-select sectors or linedefs
             const next = multiSelectType === hitType ? new Set(multiSelected) : new Set<string>();
-            if (selected?.type === hitType && !next.has(selected.id)) next.add(selected.id);
-            if (next.has(ud.entityId)) next.delete(ud.entityId);
-            else next.add(ud.entityId);
+            const nextSides = multiSelectType === hitType ? new Map(multiSelectedSides) : new Map<string, string>();
+            // Carry over single selection
+            if (selected?.type === hitType && !next.has(selected.id)) {
+              next.add(selected.id);
+              if (hitType === 'linedef' && activeSide) {
+                const prevLd = maps.linedefs.get(selected.id);
+                if (prevLd) {
+                  const sid = activeSide === 'front' ? prevLd.frontSide : prevLd.backSide;
+                  if (sid) nextSides.set(selected.id, sid);
+                }
+              }
+            }
+            if (next.has(ud.entityId)) {
+              next.delete(ud.entityId);
+              nextSides.delete(ud.entityId);
+            } else {
+              next.add(ud.entityId);
+              if (hitType === 'linedef' && ud.sidedefId) nextSides.set(ud.entityId, ud.sidedefId);
+            }
             setMultiSelected(next, hitType);
+            setMultiSelectedSides(nextSides);
             setSelected(null);
             renderPanel();
           } else if (hitType) {

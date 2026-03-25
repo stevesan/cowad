@@ -26,6 +26,7 @@ export let multiSelectType: 'vertex' | 'sector' | 'linedef' | null = null;
 export let boxSelectStart: Point | null = null;
 export let snapSize: number = 8;
 export let activeSide: 'front' | 'back' | null = null;
+export let multiSelectedSides: Map<string, string> = new Map(); // linedef ID → sidedef ID
 
 export function setTool(t: ToolType): void      { tool = t; }
 export function setSelected(s: Selection | null): void { selected = s; }
@@ -37,7 +38,8 @@ export function setDragState(v: DragState | null): void { dragState = v; }
 export function setMouseWorld(v: Point): void    { mouseWorld = v; }
 export function setHovered(h: Selection | null): void { hovered = h; }
 export function setDrawPoints(v: Point[]): void  { drawPoints = v; }
-export function setMultiSelected(s: Set<string>, type?: 'vertex' | 'sector' | 'linedef' | null): void { multiSelected = s; if (type !== undefined) multiSelectType = type; if (s.size === 0) multiSelectType = null; }
+export function setMultiSelected(s: Set<string>, type?: 'vertex' | 'sector' | 'linedef' | null): void { multiSelected = s; if (type !== undefined) multiSelectType = type; if (s.size === 0) { multiSelectType = null; multiSelectedSides = new Map(); } if (multiSelectType !== 'linedef') multiSelectedSides = new Map(); }
+export function setMultiSelectedSides(m: Map<string, string>): void { multiSelectedSides = m; }
 export function setBoxSelectStart(p: Point | null): void { boxSelectStart = p; }
 export function setSnapSize(v: number): void { snapSize = v; }
 export function setActiveSide(s: 'front' | 'back' | null): void { activeSide = s; }

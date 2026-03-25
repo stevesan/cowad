@@ -1,4 +1,4 @@
-import { maps, selected, activeSide, snapSize, multiSelected, multiSelectType } from '../state/appState';
+import { maps, selected, activeSide, snapSize, multiSelected, multiSelectType, multiSelectedSides } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { THINGS, FLAG_BITS } from '../config/constants';
 import { deleteSelected } from '../map/mapActions';
@@ -568,6 +568,28 @@ function renderMultiLinedefPanel(pContent: HTMLElement): void {
     html += multiChkField(label, bit, flags as number | null);
   html += `</div>`;
 
+  // Per-linedef selected sides (from 3D view shift+click)
+  const selectedSids = lids.map(lid => multiSelectedSides.get(lid)).filter(Boolean) as string[];
+  if (selectedSids.length > 0) {
+    function commonSideNumVal(sids: string[], field: string): number | null {
+      const vals = sids.map(sid => {
+        const sd = maps.sidedefs.get(sid);
+        return sd ? ((sd as any)[field] ?? 0) : 0;
+      });
+      return vals.every((v: number) => v === vals[0]) ? vals[0] : null;
+    }
+    function multiSideNumField(label: string, field: string, val: number | null, sids: string[], step = 1): string {
+      return `<div class="prop-row"><label>${label}</label>
+        <input type="text" data-multi-side-num="${field}" data-side-ids="${sids.join(',')}" data-numeric data-step="${step}" value="${val !== null ? val : ''}" placeholder="mixed"></div>`;
+    }
+    const cxoff = commonSideNumVal(selectedSids, 'xoff');
+    const cyoff = commonSideNumVal(selectedSids, 'yoff');
+    html += `<div class="prop-section"><div class="panel-title">Selected Sides <span style="color:#444">${selectedSids.length}</span></div>`;
+    html += multiSideNumField('X Off', 'xoff', cxoff, selectedSids);
+    html += multiSideNumField('Y Off', 'yoff', cyoff, selectedSids);
+    html += `</div>`;
+  }
+
   if (frontSids.length > 0) {
     html += `<div class="prop-section"><div class="panel-title">Front Sidedef</div>`;
     html += multiSideTexField('Upper', 'upper', frontSids, 'wall');
@@ -597,6 +619,25 @@ function renderMultiLinedefPanel(pContent: HTMLElement): void {
         if (entity) {
           record(`map/linedefs/${lid}`, { ...entity }, { ...entity, [field]: val });
           mapRef('linedefs').child(lid).update({ [field]: val });
+        }
+      }
+      endAction();
+    });
+  });
+
+  // Sidedef numeric field handlers (batch xoff/yoff)
+  pContent.querySelectorAll<HTMLInputElement>('[data-multi-side-num]').forEach(el => {
+    el.addEventListener('change', () => {
+      const field = el.dataset.multiSideNum!;
+      const sids = el.dataset.sideIds!.split(',');
+      const val = evalMath(el.value);
+      el.value = String(val);
+      beginAction();
+      for (const sid of sids) {
+        const sd = maps.sidedefs.get(sid);
+        if (sd) {
+          record(`map/sidedefs/${sid}`, { ...sd }, { ...sd, [field]: val });
+          mapRef('sidedefs').child(sid).update({ [field]: val });
         }
       }
       endAction();
