@@ -97,7 +97,7 @@ canvas { display: block; width: 100%; height: 100%; }
             border: 1px solid #333; border-radius: 3px; cursor: pointer; background: #111; }
 .tex-card:hover { border-color: #888; background: #1e1e1e; }
 .tex-card.selected { border-color: #ff0; background: #2a2a10; }
-.tex-card img { display: block; background: #000; }
+.tex-card img { display: block; background: #000; width: 100%; height: auto; max-height: 128px; object-fit: contain; }
 .tex-card-name { font-size: 9px; color: #888; margin-top: 3px; text-align: center;
                  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: 100%; }
 

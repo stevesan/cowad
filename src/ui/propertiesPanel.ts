@@ -3,8 +3,16 @@ import { mapRef } from '../config/firebase';
 import { THINGS, FLAG_BITS } from '../config/constants';
 import { deleteSelected } from '../map/mapActions';
 import { beginAction, record, endAction } from '../history/undoRedo';
-import { getTextureDataUrl, isWadLoaded } from '../wad/textureLoader';
+import { getTextureDataUrl, isWadLoaded, getTextures } from '../wad/textureLoader';
 import { openTextureBrowser } from './textureBrowser';
+
+function texPreviewStyle(name: string, maxH = 24): string {
+  const entry = getTextures().get(name.toUpperCase());
+  if (!entry || !entry.width || !entry.height) return `width:${maxH}px;height:${maxH}px`;
+  const aspect = entry.width / entry.height;
+  const w = Math.round(maxH * aspect);
+  return `width:${w}px;height:${maxH}px`;
+}
 
 function esc(s: string | number | null | undefined): string {
   return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -61,8 +69,9 @@ export function renderPanel(): void {
   function texField(label: string, path: string, val: string | undefined, texType: 'flat' | 'wall'): string {
     const v = val ?? '';
     const dataUrl = isWadLoaded() ? getTextureDataUrl(v) : null;
+    const style = v ? texPreviewStyle(v) : `width:24px;height:24px`;
     const preview = dataUrl
-      ? `<img class="tex-preview tex-clickable" src="${dataUrl}" width="24" height="24" data-path="${path}" data-tex-type="${texType}">`
+      ? `<img class="tex-preview tex-clickable" src="${dataUrl}" style="${style}" data-path="${path}" data-tex-type="${texType}">`
       : `<span class="tex-clickable tex-placeholder" data-path="${path}" data-tex-type="${texType}"></span>`;
     return `<div class="prop-row"><label>${label}</label>
       ${preview}
@@ -222,8 +231,9 @@ const DOOR_TYPES: { value: number; label: string }[] = [
 
 function doorTexField(id: string, label: string, value: string, texType: 'flat' | 'wall'): string {
   const dataUrl = isWadLoaded() ? getTextureDataUrl(value) : null;
+  const style = texPreviewStyle(value);
   const preview = dataUrl
-    ? `<img class="tex-preview door-tex-pick" src="${dataUrl}" width="24" height="24" data-door-id="${id}" data-tex-type="${texType}">`
+    ? `<img class="tex-preview door-tex-pick" src="${dataUrl}" style="${style}" data-door-id="${id}" data-tex-type="${texType}">`
     : `<span class="door-tex-pick tex-placeholder" data-door-id="${id}" data-tex-type="${texType}"></span>`;
   return `<div class="prop-row"><label>${label}</label>
     ${preview}
@@ -250,7 +260,7 @@ function refreshDoorTexPreview(id: string): void {
     const newImg = document.createElement('img');
     newImg.className = 'tex-preview door-tex-pick';
     newImg.src = dataUrl;
-    newImg.width = 24; newImg.height = 24;
+    newImg.style.cssText = texPreviewStyle(val);
     newImg.dataset.doorId = placeholder.dataset.doorId!;
     newImg.dataset.texType = placeholder.dataset.texType!;
     placeholder.replaceWith(newImg);
@@ -428,8 +438,9 @@ function renderMultiSectorPanel(pContent: HTMLElement): void {
   function multiTexField(label: string, field: string, val: string | null, texType: 'flat' | 'wall'): string {
     const v = val ?? '';
     const dataUrl = v && isWadLoaded() ? getTextureDataUrl(v) : null;
+    const style = v ? texPreviewStyle(v) : `width:24px;height:24px`;
     const preview = dataUrl
-      ? `<img class="tex-preview tex-clickable" src="${dataUrl}" width="24" height="24" data-multi-field="${field}" data-tex-type="${texType}">`
+      ? `<img class="tex-preview tex-clickable" src="${dataUrl}" style="${style}" data-multi-field="${field}" data-tex-type="${texType}">`
       : `<span class="tex-clickable tex-placeholder" data-multi-field="${field}" data-tex-type="${texType}"></span>`;
     return `<div class="prop-row"><label>${label}</label>
       ${preview}
@@ -551,8 +562,9 @@ function renderMultiLinedefPanel(pContent: HTMLElement): void {
     const val = commonSideVal(sids, field);
     const v = val ?? '';
     const dataUrl = v && isWadLoaded() ? getTextureDataUrl(v) : null;
+    const style = v ? texPreviewStyle(v) : `width:24px;height:24px`;
     const preview = dataUrl
-      ? `<img class="tex-preview tex-clickable" src="${dataUrl}" width="24" height="24" data-side-field="${field}" data-side-type="${texType}" data-side-ids="${sids.join(',')}">`
+      ? `<img class="tex-preview tex-clickable" src="${dataUrl}" style="${style}" data-side-field="${field}" data-side-type="${texType}" data-side-ids="${sids.join(',')}">`
       : `<span class="tex-clickable tex-placeholder" data-side-field="${field}" data-side-type="${texType}" data-side-ids="${sids.join(',')}"></span>`;
     return `<div class="prop-row"><label>${label}</label>
       ${preview}

@@ -77,12 +77,14 @@ function renderGrid(): void {
   // Sort alphabetically
   filtered.sort((a, b) => a.name.localeCompare(b.name));
 
-  grid.innerHTML = filtered.map(tex => `
+  grid.innerHTML = filtered.map(tex => {
+    const aspect = (tex.width && tex.height) ? tex.width / tex.height : 1;
+    return `
     <div class="tex-card${tex.name === currentValue.toUpperCase() ? ' selected' : ''}" data-name="${tex.name}">
-      <img src="${tex.dataUrl}" width="64" height="64" style="image-rendering:pixelated">
+      <img src="${tex.dataUrl}" style="aspect-ratio:${aspect};image-rendering:pixelated">
       <div class="tex-card-name">${tex.name}</div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 
   // Click handlers
   grid.querySelectorAll('.tex-card').forEach(card => {
