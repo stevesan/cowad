@@ -11,7 +11,7 @@ import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea, seg
 import { VERTEX_PICK_PX, LINEDEF_PICK_PX, THING_PICK_PX } from '../config/ux';
 import { buildSectorPoly, buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
 import { findSectorsContainingBothVertices, anyBoundaryContainsBoth } from '../geometry/sectorQueries';
-import { placeThing, deleteSelected, deleteMultiSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint, mergeVertices, mergeSectors } from '../map/mapActions';
+import { placeThing, deleteSelected, deleteMultiSelected, createSectorFromPolygon, splitSector, splitLinedefAtPoint, mergeVertices, mergeSectors, bridgeLinedefs } from '../map/mapActions';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
@@ -640,6 +640,10 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     }
     if (e.key.toLowerCase() === 'm' && tool === 'select') {
       if (multiSelectType === 'sector') mergeSectors();
+      else if (multiSelectType === 'linedef' && multiSelected.size === 2) {
+        const [a, b] = [...multiSelected];
+        bridgeLinedefs(a, b);
+      }
       else mergeVertices();
       return;
     }

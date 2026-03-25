@@ -1,7 +1,7 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, mouseWorld, triggerRenderPanel, triggerDraw } from '../state/appState';
 import { buildSectorLoopIds } from '../geometry/cycleFinder';
-import { pointInPoly, polyArea } from '../geometry/hitTest';
+import { pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { isCCW, computeTestPoint, buildSplitPaths } from '../geometry/polygonMath';
 import { findExistingLinedef, findEnclosingSector, mergeWouldDuplicate } from '../geometry/sectorQueries';
 import { findBoundaryPath } from '../state/indices';
@@ -474,8 +474,8 @@ function expandMissingEdges(chain: DrawVertex[]): DrawVertex[] {
   return result;
 }
 
-export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<string | null> {
-  chain = expandMissingEdges(chain);
+export async function createSectorFromPolygon(chain: DrawVertex[], skipExpansion = false): Promise<string | null> {
+  if (!skipExpansion) chain = expandMissingEdges(chain);
   const n = chain.length;
   if (n < 3) return null;
 
@@ -770,4 +770,88 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
   endAction();
   recordSplitDone();
   return [sectorId, newSid];
+}
+
+// ── Bridge two linedefs into a 4-sided sector ──
+
+export async function bridgeLinedefs(lid1: string, lid2: string): Promise<void> {
+  const ld1 = maps.linedefs.get(lid1);
+  const ld2 = maps.linedefs.get(lid2);
+  if (!ld1 || !ld2) return;
+
+  // Reject if they share a vertex
+  if (ld1.v1 === ld2.v1 || ld1.v1 === ld2.v2 || ld1.v2 === ld2.v1 || ld1.v2 === ld2.v2) {
+    showToast('Linedefs share a vertex');
+    return;
+  }
+
+  // Collect sectors each linedef belongs to
+  const sectorsOf = (ld: Linedef): Set<string> => {
+    const s = new Set<string>();
+    const fs = ld.frontSide ? maps.sidedefs.get(ld.frontSide) : null;
+    const bs = ld.backSide ? maps.sidedefs.get(ld.backSide) : null;
+    if (fs?.sector) s.add(fs.sector);
+    if (bs?.sector) s.add(bs.sector);
+    return s;
+  };
+  const s1 = sectorsOf(ld1);
+  const s2 = sectorsOf(ld2);
+  for (const s of s1) {
+    if (s2.has(s)) {
+      showToast('Linedefs already share a sector');
+      return;
+    }
+  }
+
+  const va = maps.vertices.get(ld1.v1)!;
+  const vb = maps.vertices.get(ld1.v2)!;
+  const vc = maps.vertices.get(ld2.v1)!;
+  const vd = maps.vertices.get(ld2.v2)!;
+  if (!va || !vb || !vc || !vd) return;
+
+  // Validate that new connecting edges don't cross any existing linedef
+  function edgesValid(pairs: [Point, Point][]): boolean {
+    for (const [p1, p2] of pairs) {
+      for (const [, ld] of maps.linedefs) {
+        const u = maps.vertices.get(ld.v1);
+        const w = maps.vertices.get(ld.v2);
+        if (!u || !w) continue;
+        if (segmentsProperlyIntersect(p1.x, p1.y, p2.x, p2.y, u.x, u.y, w.x, w.y)) return false;
+      }
+    }
+    // Check the two new edges don't cross each other
+    if (pairs.length === 2) {
+      const [p1, p2] = pairs[0], [p3, p4] = pairs[1];
+      if (segmentsProperlyIntersect(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y)) return false;
+    }
+    return true;
+  }
+
+  // Option A: quad a→b→d→c  (new edges: b→d, c→a)
+  // Option B: quad a→b→c→d  (new edges: b→c, d→a)
+  const validA = edgesValid([[vb, vd], [vc, va]]);
+  const validB = edgesValid([[vb, vc], [vd, va]]);
+
+  let chain: DrawVertex[];
+  if (validA && validB) {
+    // Pick the one with smaller area
+    const areaA = polyArea([va, vb, vd, vc]);
+    const areaB = polyArea([va, vb, vc, vd]);
+    chain = areaA <= areaB
+      ? [{ x: va.x, y: va.y, existingId: ld1.v1 }, { x: vb.x, y: vb.y, existingId: ld1.v2 },
+         { x: vd.x, y: vd.y, existingId: ld2.v2 }, { x: vc.x, y: vc.y, existingId: ld2.v1 }]
+      : [{ x: va.x, y: va.y, existingId: ld1.v1 }, { x: vb.x, y: vb.y, existingId: ld1.v2 },
+         { x: vc.x, y: vc.y, existingId: ld2.v1 }, { x: vd.x, y: vd.y, existingId: ld2.v2 }];
+  } else if (validA) {
+    chain = [{ x: va.x, y: va.y, existingId: ld1.v1 }, { x: vb.x, y: vb.y, existingId: ld1.v2 },
+             { x: vd.x, y: vd.y, existingId: ld2.v2 }, { x: vc.x, y: vc.y, existingId: ld2.v1 }];
+  } else if (validB) {
+    chain = [{ x: va.x, y: va.y, existingId: ld1.v1 }, { x: vb.x, y: vb.y, existingId: ld1.v2 },
+             { x: vc.x, y: vc.y, existingId: ld2.v1 }, { x: vd.x, y: vd.y, existingId: ld2.v2 }];
+  } else {
+    showToast('Connecting edges would intersect existing geometry');
+    return;
+  }
+
+  await createSectorFromPolygon(chain, true);
 }
