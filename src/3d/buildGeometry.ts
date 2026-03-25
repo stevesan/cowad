@@ -43,14 +43,19 @@ function getTexSize(name: string): { w: number; h: number } {
 
 const BRIGHTNESS_SCALE = 0.5;
 
-function makeMaterial(texName: string, light: number): THREE.MeshBasicMaterial {
+function makeMaterial(texName: string, light: number, transparent = false): THREE.MeshBasicMaterial {
   const brightness = Math.max(0.05, Math.min(1, light / 255)) * BRIGHTNESS_SCALE;
   const tex = getTexture(texName);
   if (tex) {
-    return new THREE.MeshBasicMaterial({
+    const opts: THREE.MeshBasicMaterialParameters = {
       map: tex.clone(),
       color: new THREE.Color(brightness, brightness, brightness),
-    });
+    };
+    if (transparent) {
+      opts.transparent = true;
+      opts.alphaTest = 0.5;
+    }
+    return new THREE.MeshBasicMaterial(opts);
   }
   const c = Math.round(brightness * 180);
   return new THREE.MeshBasicMaterial({
@@ -193,6 +198,72 @@ function makeWallQuad(
   group.add(mesh);
 }
 
+function makeMidWallQuad(
+  x1: number, y1: number, x2: number, y2: number,
+  openBottom: number, openTop: number,
+  texName: string, light: number,
+  xoff: number, yoff: number, flags: number,
+  entityId: string, sidedefId: string, surface: string, group: THREE.Group
+): void {
+  if (openTop <= openBottom) return;
+
+  const wallLen = Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+  if (wallLen < 0.01) return;
+
+  const { w: tw, h: th } = getTexSize(texName);
+  const lowerUnpeg = !!(flags & 0x10);
+
+  // Position the texture within the opening
+  let texTop: number, texBottom: number;
+  if (lowerUnpeg) {
+    // Texture anchored to bottom of opening
+    texBottom = openBottom + yoff;
+    texTop = texBottom + th;
+  } else {
+    // Texture anchored to top of opening
+    texTop = openTop + yoff;
+    texBottom = texTop - th;
+  }
+
+  // Clip to the opening (mid textures don't tile vertically)
+  const drawBottom = Math.max(openBottom, texBottom);
+  const drawTop = Math.min(openTop, texTop);
+  if (drawTop <= drawBottom) return;
+
+  const positions = new Float32Array([
+    x1, drawBottom, -y1,
+    x2, drawBottom, -y2,
+    x2, drawTop, -y2,
+    x1, drawTop, -y1,
+  ]);
+
+  const u0 = xoff / tw;
+  const u1 = (xoff + wallLen) / tw;
+  // V coords: distance from texture top, normalized to texture height
+  const vTop = (texTop - drawTop) / th;
+  const vBottom = (texTop - drawBottom) / th;
+
+  const uvs = new Float32Array([
+    u0, vBottom,
+    u1, vBottom,
+    u1, vTop,
+    u0, vTop,
+  ]);
+
+  const indices = [0, 1, 2, 0, 2, 3];
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+
+  const mat = makeMaterial(texName, light, true);
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.userData = { entityType: 'linedef', entityId, sidedefId, surface };
+  group.add(mesh);
+}
+
 export function buildWalls(group: THREE.Group): void {
   maps.linedefs.forEach((ld, lid) => {
     const v1 = maps.vertices.get(ld.v1);
@@ -240,6 +311,23 @@ export function buildWalls(group: THREE.Group): void {
       if (fFloor > bFloor && backSd) {
         makeWallQuad(v2.x, v2.y, v1.x, v1.y, bFloor, fFloor,
           backSd.lower || 'STARTAN2', bLight, backSd.xoff ?? 0, backSd.yoff ?? 0, lid, ld.backSide!, 'lower', group);
+      }
+
+      // Mid texture (front side) — gates, grates, fences
+      if (frontSd && frontSd.mid && frontSd.mid !== '-') {
+        const openBottom = Math.max(fFloor, bFloor);
+        const openTop = Math.min(fCeil, bCeil);
+        makeMidWallQuad(v1.x, v1.y, v2.x, v2.y, openBottom, openTop,
+          frontSd.mid, fLight, frontSd.xoff ?? 0, frontSd.yoff ?? 0,
+          ld.flags, lid, ld.frontSide!, 'mid', group);
+      }
+      // Mid texture (back side)
+      if (backSd && backSd.mid && backSd.mid !== '-') {
+        const openBottom = Math.max(fFloor, bFloor);
+        const openTop = Math.min(fCeil, bCeil);
+        makeMidWallQuad(v2.x, v2.y, v1.x, v1.y, openBottom, openTop,
+          backSd.mid, bLight, backSd.xoff ?? 0, backSd.yoff ?? 0,
+          ld.flags, lid, ld.backSide!, 'mid', group);
       }
     }
   });
