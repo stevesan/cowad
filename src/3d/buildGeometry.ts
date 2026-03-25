@@ -180,8 +180,8 @@ function makeWallQuad(
 
   const u0 = xoff / tw;
   const u1 = (xoff + wallLen) / tw;
-  const v0 = (yoff + wallH) / th;
-  const v1 = yoff / th;
+  const v0 = 1 - (yoff + wallH) / th;
+  const v1 = 1 - yoff / th;
 
   const uvs = new Float32Array([
     u0, v0,
@@ -245,9 +245,9 @@ function makeMidWallQuad(
 
   const u0 = xoff / tw;
   const u1 = (xoff + wallLen) / tw;
-  // V coords: distance from texture top, normalized to texture height
-  const vTop = (texTop - drawTop) / th;
-  const vBottom = (texTop - drawBottom) / th;
+  // V coords: flip for Three.js (v=1 is image top, v=0 is image bottom)
+  const vTop = 1 - (texTop - drawTop) / th;
+  const vBottom = 1 - (texTop - drawBottom) / th;
 
   const uvs = new Float32Array([
     u0, vBottom,
