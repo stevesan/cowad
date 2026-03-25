@@ -9,6 +9,7 @@ import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { getSelectedThingType } from '../ui/thingBrowser';
 import type { DrawVertex, Linedef, Point } from '../types';
+import { recordCreateDone, recordSplitBefore, recordSplitDone, recordDeleteBefore, recordDeleteDone } from '../testing/recorder';
 
 export function placeThing(wx: number, wy: number): void {
   const type = getSelectedThingType();
@@ -217,6 +218,7 @@ export function deleteLinedef(lid: string): void {
 
 export function deleteSelected(): void {
   if (!selected) return;
+  recordDeleteBefore(selected.type, selected.id);
   beginAction();
   const { type, id } = selected;
   if (type === 'vertex') {
@@ -319,6 +321,7 @@ export function deleteSelected(): void {
     mapRef('things').child(id).remove();
   }
   endAction();
+  recordDeleteDone();
   setSelected(null);
   triggerRenderPanel();
 }
@@ -616,12 +619,14 @@ export async function createSectorFromPolygon(chain: DrawVertex[]): Promise<stri
   setSelected({ type: 'sector', id: sid });
   triggerRenderPanel();
   endAction();
+  recordCreateDone(chain);
   return sid;
 }
 
 export async function splitSector(chain: DrawVertex[], sectorId: string): Promise<[string, string] | null> {
   const n = chain.length;
   if (n < 2) return null;
+  recordSplitBefore(chain, sectorId);
 
   const startVid = chain[0].existingId!;
   const endVid = chain[n - 1].existingId!;
@@ -763,5 +768,6 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
   setSelected({ type: 'sector', id: newSid });
   triggerRenderPanel();
   endAction();
+  recordSplitDone();
   return [sectorId, newSid];
 }

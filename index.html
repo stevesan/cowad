@@ -28,6 +28,7 @@
   </label>
   <div class="sep"></div>
   <button id="import-wad-btn" style="background:#1a1a2e;border:1px solid #446;color:#88f;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Import IWAD</button>
+  <button id="record-btn" style="background:#2a1a1a;border:1px solid #644;color:#f88;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Record</button>
   <button id="clean-btn" style="background:#1a2a1a;border:1px solid #464;color:#8f8;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Clean</button>
   <button id="wad-btn" style="background:#1a1a2e;border:1px solid #446;color:#88f;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Export WAD</button>
   <button id="play-btn" style="background:#2a1a1a;border:1px solid #644;color:#f88;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Play</button>
@@ -46,6 +47,20 @@
 </div>
 
 <div id="toast"></div>
+
+<div id="record-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;">
+  <div style="background:#1a1a1a;border:1px solid #444;border-radius:6px;padding:16px;width:80vw;max-width:800px;max-height:80vh;display:flex;flex-direction:column;gap:8px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <span style="color:#ccc;font-family:monospace;font-size:14px;">Recorded Test Case</span>
+      <span style="display:flex;gap:6px;">
+        <button id="record-copy-test" style="background:#1a1a2e;border:1px solid #446;color:#88f;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Copy Test</button>
+        <button id="record-copy-json" style="background:#1a2a1a;border:1px solid #464;color:#8f8;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Copy JSON</button>
+        <button id="record-close" style="background:#2a1a1a;border:1px solid #644;color:#f88;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Close</button>
+      </span>
+    </div>
+    <textarea id="record-output" readonly style="flex:1;min-height:400px;background:#111;color:#cfc;border:1px solid #333;border-radius:3px;font-family:monospace;font-size:12px;padding:8px;resize:none;white-space:pre;overflow:auto;tab-size:2;"></textarea>
+  </div>
+</div>
 
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
