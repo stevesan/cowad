@@ -43,19 +43,25 @@ function getTexSize(name: string): { w: number; h: number } {
 
 const BRIGHTNESS_SCALE = 0.5;
 
-function makeMaterial(texName: string, light: number, transparent = false): THREE.MeshBasicMaterial {
+function makeMaterial(texName: string, light: number, colorKey = false): THREE.MeshBasicMaterial {
   const brightness = Math.max(0.05, Math.min(1, light / 255)) * BRIGHTNESS_SCALE;
   const tex = getTexture(texName);
   if (tex) {
-    const opts: THREE.MeshBasicMaterialParameters = {
+    const mat = new THREE.MeshBasicMaterial({
       map: tex.clone(),
       color: new THREE.Color(brightness, brightness, brightness),
-    };
-    if (transparent) {
-      opts.transparent = true;
-      opts.alphaTest = 0.5;
+    });
+    if (colorKey) {
+      // Discard cyan (0,255,255) pixels — DOOM's transparent color for mid textures
+      mat.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          `#include <map_fragment>
+           if (sampledDiffuseColor.r < 0.1 && sampledDiffuseColor.g > 0.9 && sampledDiffuseColor.b > 0.9) discard;`
+        );
+      };
     }
-    return new THREE.MeshBasicMaterial(opts);
+    return mat;
   }
   const c = Math.round(brightness * 180);
   return new THREE.MeshBasicMaterial({
