@@ -169,7 +169,9 @@ function drawThings(): void {
       const scale = Math.min(boxSize / img.naturalWidth, boxSize / img.naturalHeight);
       const dw = img.naturalWidth * scale;
       const dh = img.naturalHeight * scale;
+      ctx.imageSmoothingEnabled = false;
       ctx.drawImage(img, s.x - dw / 2, s.y - dh / 2, dw, dh);
+      ctx.imageSmoothingEnabled = true;
     }
 
     if (tool === 'thing' || isSel || isHov) {
