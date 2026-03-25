@@ -287,36 +287,59 @@ export function buildWalls(group: THREE.Group): void {
     const fCeil = frontSec.ceiling ?? 128;
     const fLight = frontSec.light ?? 160;
 
+    const upperUnpeg = !!(ld.flags & 0x08);
+    const lowerUnpeg = !!(ld.flags & 0x10);
+
     if (!backSec) {
       // Single-sided: full wall
+      // Default: top-aligned; lower unpegged: bottom-aligned
       const texName = frontSd?.mid || 'STARTAN2';
+      const yoff = frontSd?.yoff ?? 0;
+      const wallH = fCeil - fFloor;
+      const adjYoff = lowerUnpeg ? yoff + getTexSize(texName).h - wallH : yoff;
       makeWallQuad(v1.x, v1.y, v2.x, v2.y, fFloor, fCeil,
-        texName, fLight, frontSd?.xoff ?? 0, frontSd?.yoff ?? 0, lid, ld.frontSide!, 'mid', group);
+        texName, fLight, frontSd?.xoff ?? 0, adjYoff, lid, ld.frontSide!, 'mid', group);
     } else {
       const bFloor = backSec.floor ?? 0;
       const bCeil = backSec.ceiling ?? 128;
       const bLight = backSec.light ?? 160;
 
       // Upper wall (front side)
+      // Default: bottom-aligned (bottom of texture at lower ceiling); upper unpegged: top-aligned
       if (fCeil > bCeil && frontSd) {
+        const texName = frontSd.upper || 'STARTAN2';
+        const yoff = frontSd.yoff ?? 0;
+        const wallH = fCeil - bCeil;
+        const adjYoff = upperUnpeg ? yoff : yoff + getTexSize(texName).h - wallH;
         makeWallQuad(v1.x, v1.y, v2.x, v2.y, bCeil, fCeil,
-          frontSd.upper || 'STARTAN2', fLight, frontSd.xoff ?? 0, frontSd.yoff ?? 0, lid, ld.frontSide!, 'upper', group);
+          texName, fLight, frontSd.xoff ?? 0, adjYoff, lid, ld.frontSide!, 'upper', group);
       }
       // Lower wall (front side)
+      // Default: top-aligned; lower unpegged: aligned to front sector ceiling
       if (bFloor > fFloor && frontSd) {
+        const texName = frontSd.lower || 'STARTAN2';
+        const yoff = frontSd.yoff ?? 0;
+        const adjYoff = lowerUnpeg ? yoff + fCeil - bFloor : yoff;
         makeWallQuad(v1.x, v1.y, v2.x, v2.y, fFloor, bFloor,
-          frontSd.lower || 'STARTAN2', fLight, frontSd.xoff ?? 0, frontSd.yoff ?? 0, lid, ld.frontSide!, 'lower', group);
+          texName, fLight, frontSd.xoff ?? 0, adjYoff, lid, ld.frontSide!, 'lower', group);
       }
 
       // Upper wall (back side)
       if (bCeil > fCeil && backSd) {
+        const texName = backSd.upper || 'STARTAN2';
+        const yoff = backSd.yoff ?? 0;
+        const wallH = bCeil - fCeil;
+        const adjYoff = upperUnpeg ? yoff : yoff + getTexSize(texName).h - wallH;
         makeWallQuad(v2.x, v2.y, v1.x, v1.y, fCeil, bCeil,
-          backSd.upper || 'STARTAN2', bLight, backSd.xoff ?? 0, backSd.yoff ?? 0, lid, ld.backSide!, 'upper', group);
+          texName, bLight, backSd.xoff ?? 0, adjYoff, lid, ld.backSide!, 'upper', group);
       }
       // Lower wall (back side)
       if (fFloor > bFloor && backSd) {
+        const texName = backSd.lower || 'STARTAN2';
+        const yoff = backSd.yoff ?? 0;
+        const adjYoff = lowerUnpeg ? yoff + bCeil - fFloor : yoff;
         makeWallQuad(v2.x, v2.y, v1.x, v1.y, bFloor, fFloor,
-          backSd.lower || 'STARTAN2', bLight, backSd.xoff ?? 0, backSd.yoff ?? 0, lid, ld.backSide!, 'lower', group);
+          texName, bLight, backSd.xoff ?? 0, adjYoff, lid, ld.backSide!, 'lower', group);
       }
 
       // Mid texture (front side) — gates, grates, fences
