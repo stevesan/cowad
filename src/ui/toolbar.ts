@@ -2,6 +2,7 @@ import { db } from '../config/firebase';
 import { setSelected } from '../state/appState';
 import { cleanupMap } from '../map/mapCleanup';
 import { exportWAD, launchWAD } from '../export/wadExport';
+import { exportJSON, importJSON } from '../export/jsonExport';
 import { importWad } from '../wad/textureLoader';
 import { toggle3D, is3DActive } from '../3d/view3d';
 import { isRecording, startRecording, stopRecording, generateTestCode, exportRecording } from '../testing/recorder';
@@ -82,6 +83,8 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
 
   document.getElementById('clean-btn')!.addEventListener('click', cleanupMap);
   document.getElementById('wad-btn')!.addEventListener('click', exportWAD);
+  document.getElementById('json-export-btn')!.addEventListener('click', exportJSON);
+  document.getElementById('json-import-btn')!.addEventListener('click', importJSON);
   document.getElementById('play-btn')!.addEventListener('click', () => launchWAD());
 
   document.getElementById('clear-btn')!.addEventListener('click', () => {
