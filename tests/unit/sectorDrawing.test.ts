@@ -1,124 +1,14 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { maps } from '../../src/state/appState';
-import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, onSidedefAdded, onSidedefChanged, onSidedefRemoved, rebuildIndices } from '../../src/state/indices';
+import { rebuildIndices } from '../../src/state/indices';
 import type { DrawVertex } from '../../src/types';
-
-// ── Firebase mock ──
-// Must be hoisted before any imports that use firebase
-let keyCounter = 0;
-function nextKey() { return 'k' + (++keyCounter); }
-
-vi.mock('../../src/config/firebase', () => {
-  const makeRef = (basePath: string) => ({
-    push: (val: any) => {
-      const key = nextKey();
-      // Simulate Firebase listener: add to maps
-      const col = basePath.replace('map/', '');
-      if ((maps as any)[col]) {
-        (maps as any)[col].set(key, { ...val });
-      }
-      // Maintain indices
-      if (col === 'linedefs' && val.v1 && val.v2) {
-        onLinedefAdded(key, val.v1, val.v2);
-      } else if (col === 'sidedefs' && val.sector) {
-        onSidedefAdded(key, val.sector);
-      }
-      // Return a thenable with .key accessible synchronously (like Firebase SDK)
-      const result = Promise.resolve({ key }) as any;
-      result.key = key;
-      return result;
-    },
-    child: (id: string) => ({
-      update: (val: any) => {
-        const col = basePath.replace('map/', '');
-        if ((maps as any)[col]) {
-          const existing = (maps as any)[col].get(id);
-          if (existing) {
-            const oldV1 = existing.v1, oldV2 = existing.v2;
-            const oldSector = existing.sector;
-            (maps as any)[col].set(id, { ...existing, ...val });
-            // Maintain indices
-            if (col === 'linedefs') {
-              const updated = (maps as any)[col].get(id);
-              onLinedefChanged(id, updated.v1, updated.v2, oldV1, oldV2);
-            } else if (col === 'sidedefs') {
-              const updated = (maps as any)[col].get(id);
-              onSidedefChanged(id, updated.sector, oldSector);
-            }
-          }
-        }
-        return Promise.resolve();
-      },
-      remove: () => {
-        const col = basePath.replace('map/', '');
-        if (col === 'linedefs') {
-          const existing = (maps as any)[col]?.get(id);
-          if (existing) onLinedefRemoved(id, existing.v1, existing.v2);
-        } else if (col === 'sidedefs') {
-          const existing = (maps as any)[col]?.get(id);
-          if (existing) onSidedefRemoved(id, existing.sector);
-        }
-        if ((maps as any)[col]) (maps as any)[col].delete(id);
-        return Promise.resolve();
-      },
-    }),
-    set: () => Promise.resolve(),
-    remove: () => Promise.resolve(),
-    on: () => {},
-    once: () => Promise.resolve({ val: () => null }),
-    onDisconnect: () => ({ remove: () => {} }),
-  });
-
-  return {
-    db: { ref: (p: string) => makeRef(p || '') },
-    mapRef: (col: string) => makeRef('map/' + col),
-  };
-});
-
-// Mock history (no-op)
-vi.mock('../../src/history/undoRedo', () => ({
-  beginAction: () => {},
-  record: () => {},
-  endAction: () => {},
-}));
-
-// Mock UI and browser-dependent modules (no-op)
-vi.mock('../../src/ui/toast', () => ({ showToast: () => {} }));
-vi.mock('../../src/canvas/renderer', () => ({ draw: () => {} }));
-vi.mock('../../src/ui/propertiesPanel', () => ({ renderPanel: () => {} }));
-vi.mock('../../src/ui/thingBrowser', () => ({ getSelectedThingType: () => 1, setSelectedThingType: () => {} }));
-vi.mock('../../src/wad/textureLoader', () => ({
-  getTextureDataUrl: () => null,
-  isWadLoaded: () => false,
-  getSpritePrefixEntry: () => null,
-}));
+import { findVertexAt } from './setup';
 
 import { createSectorFromPolygon, splitSector, deleteSelected } from '../../src/map/mapActions';
 import { buildSectorLoopIds, buildSectorPoly } from '../../src/geometry/cycleFinder';
 import { setSelected } from '../../src/state/appState';
 
-function findVertexAt(x: number, y: number): string | null {
-  for (const [id, v] of maps.vertices) {
-    if (v.x === x && v.y === y) return id;
-  }
-  return null;
-}
-
-function clearMaps() {
-  maps.vertices.clear();
-  maps.linedefs.clear();
-  maps.sidedefs.clear();
-  maps.sectors.clear();
-  maps.things.clear();
-  rebuildIndices();
-  keyCounter = 0;
-}
-
 describe('sector drawing', () => {
-  beforeEach(() => {
-    clearMaps();
-  });
-
   it('creates a triangle sector with 3 linedefs all assigned to the new sector', async () => {
     const chain: DrawVertex[] = [
       { x: 0, y: 0 },
