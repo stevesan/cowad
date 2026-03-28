@@ -8,6 +8,7 @@ import { initCanvasInput, initKeyboard } from './ui/canvasInput';
 import { initToolbar } from './ui/toolbar';
 import { initSync, initPresence } from './sync/firebaseSync';
 import { rebuild3D } from './3d/view3d';
+import { initDropImport } from './export/jsonExport';
 
 setCallbacks({ draw, renderPanel, rebuild3D });
 
@@ -33,6 +34,7 @@ document.getElementById('snap-size-sel')!.addEventListener('change', e => {
 
 initSync();
 initPresence();
+initDropImport();
 
 resize();
 pan.x = canvas.width  / 2;
