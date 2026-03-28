@@ -2,6 +2,7 @@ import { vi, beforeEach, expect } from 'vitest';
 import { maps } from '../../src/state/appState';
 import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, onSidedefAdded, onSidedefChanged, onSidedefRemoved, rebuildIndices } from '../../src/state/indices';
 import { pointInSector } from '../../src/geometry/cycleFinder';
+import { nearestLinedef } from '../../src/geometry/hitTest';
 import { findSectorOverlaps } from '../../src/map/overlapCheck';
 import { drawReset } from '../../src/map/drawSession';
 
@@ -83,16 +84,7 @@ export function findSectorAt(x: number, y: number): string | null {
 }
 
 export function findLinedefNear(x: number, y: number): string | null {
-  let best: string | null = null;
-  let bestDist = Infinity;
-  for (const [lid, ld] of maps.linedefs) {
-    const a = maps.vertices.get(ld.v1), b = maps.vertices.get(ld.v2);
-    if (!a || !b) continue;
-    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
-    const d = (mx - x) ** 2 + (my - y) ** 2;
-    if (d < bestDist) { bestDist = d; best = lid; }
-  }
-  return best;
+  return nearestLinedef(x, y, Infinity);
 }
 
 beforeEach(() => { clearMaps(); drawReset(); });
