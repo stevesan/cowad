@@ -729,39 +729,45 @@ export async function splitSector(chain: DrawVertex[], sectorId: string): Promis
     await mapRef('linedefs').child(ldRef.key).update(ldUpdates);
   }
 
-  // 5. Reassign holes to correct sector
-  const newSecPoly: Point[] = [];
-  for (const vid of path1) {
-    const v = maps.vertices.get(vid);
-    if (v) newSecPoly.push(v);
-  }
-  for (let i = chainVids.length - 2; i >= 1; i--) {
-    const v = maps.vertices.get(chainVids[i]);
-    if (v) newSecPoly.push(v);
-  }
+  // 5. Reassign holes to correct sector (only when splitting an outer boundary,
+  //    not when splitting a hole — filling part of a hole doesn't move other loops)
+  const targetPoly = targetLoop.map(id => maps.vertices.get(id)).filter((v): v is Point => !!v);
+  const isHoleSplit = isCCW(targetPoly);
 
-  for (const holeLoop of loops) {
-    if (holeLoop === targetLoop) continue;
-    let cx = 0, cy = 0, cnt = 0;
-    for (const vid of holeLoop) {
+  if (!isHoleSplit) {
+    const newSecPoly: Point[] = [];
+    for (const vid of path1) {
       const v = maps.vertices.get(vid);
-      if (v) { cx += v.x; cy += v.y; cnt++; }
+      if (v) newSecPoly.push(v);
     }
-    if (!cnt) continue;
-    cx /= cnt; cy /= cnt;
+    for (let i = chainVids.length - 2; i >= 1; i--) {
+      const v = maps.vertices.get(chainVids[i]);
+      if (v) newSecPoly.push(v);
+    }
 
-    if (pointInPoly(cx, cy, newSecPoly)) {
-      for (let i = 0; i < holeLoop.length; i++) {
-        const found = findExistingLinedef(maps.linedefs, holeLoop[i], holeLoop[(i + 1) % holeLoop.length]);
-        if (!found) continue;
-        const ld = maps.linedefs.get(found.ldId);
-        if (!ld) continue;
-        for (const sdId of [ld.frontSide, ld.backSide]) {
-          if (!sdId) continue;
-          const sd = maps.sidedefs.get(sdId);
-          if (sd && sd.sector === sectorId) {
-            record(`map/sidedefs/${sdId}`, { ...sd }, { ...sd, sector: newSid });
-            mapRef('sidedefs').child(sdId).update({ sector: newSid });
+    for (const holeLoop of loops) {
+      if (holeLoop === targetLoop) continue;
+      let cx = 0, cy = 0, cnt = 0;
+      for (const vid of holeLoop) {
+        const v = maps.vertices.get(vid);
+        if (v) { cx += v.x; cy += v.y; cnt++; }
+      }
+      if (!cnt) continue;
+      cx /= cnt; cy /= cnt;
+
+      if (pointInPoly(cx, cy, newSecPoly)) {
+        for (let i = 0; i < holeLoop.length; i++) {
+          const found = findExistingLinedef(maps.linedefs, holeLoop[i], holeLoop[(i + 1) % holeLoop.length]);
+          if (!found) continue;
+          const ld = maps.linedefs.get(found.ldId);
+          if (!ld) continue;
+          for (const sdId of [ld.frontSide, ld.backSide]) {
+            if (!sdId) continue;
+            const sd = maps.sidedefs.get(sdId);
+            if (sd && sd.sector === sectorId) {
+              record(`map/sidedefs/${sdId}`, { ...sd }, { ...sd, sector: newSid });
+              mapRef('sidedefs').child(sdId).update({ sector: newSid });
+            }
           }
         }
       }

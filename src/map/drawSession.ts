@@ -142,7 +142,10 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
               if (poly.length >= 3) {
                 const mx = (first.x + last.x) / 2;
                 const my = (first.y + last.y) / 2;
-                valid = pointInPoly(mx, my, poly);
+                // Accept if midpoint is inside the loop polygon (splitting
+                // through the loop interior) OR inside the sector itself
+                // (splitting the sector body across a hole boundary).
+                valid = pointInPoly(mx, my, poly) || pointInSector(mx, my, cand.sid);
               }
               break;
             }
