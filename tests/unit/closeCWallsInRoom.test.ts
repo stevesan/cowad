@@ -4,7 +4,7 @@ import { drawClick, drawComplete } from '../../src/map/drawSession';
 import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid, dumpMapJSON } from './setup';
 import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';
 
-describe('recorded test case', () => {
+describe('close C-Walls in room', () => {
   it('should produce correct map state', async () => {
     await drawClick(-176, 224);
     await drawClick(352, 192);
