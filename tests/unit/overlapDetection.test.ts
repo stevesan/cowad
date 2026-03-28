@@ -15,8 +15,15 @@ function rawSector(verts: [number, number][]): string {
 
   const vids: string[] = [];
   for (const [x, y] of verts) {
-    const vid = 'raw_v' + (++rawId);
-    maps.vertices.set(vid, { x, y });
+    // Reuse existing vertex at same coordinates
+    let vid: string | null = null;
+    for (const [id, v] of maps.vertices) {
+      if (v.x === x && v.y === y) { vid = id; break; }
+    }
+    if (!vid) {
+      vid = 'raw_v' + (++rawId);
+      maps.vertices.set(vid, { x, y });
+    }
     vids.push(vid);
   }
 
@@ -79,6 +86,14 @@ describe('expectNoSectorOverlaps', () => {
     //  No edges cross, but small's vertices are inside large.
     rawSector([[0, 0], [200, 0], [200, 200], [0, 200]]);
     rawSector([[50, 50], [150, 50], [150, 150], [50, 150]]);
+    expect(() => expectNoSectorOverlaps()).toThrow(/overlap/i);
+  });
+
+  it('detects triangle inside triangle sharing one edge', () => {
+    //  Big:   (0,0)-(200,0)-(100,200)
+    //  Small: (0,0)-(200,0)-(100,100)  — shares bottom edge, apex inside big
+    rawSector([[0, 0], [200, 0], [100, 200]]);
+    rawSector([[0, 0], [200, 0], [100, 100]]);
     expect(() => expectNoSectorOverlaps()).toThrow(/overlap/i);
   });
 

@@ -3,6 +3,7 @@ import { setSelected } from '../state/appState';
 import { cleanupMap } from '../map/mapCleanup';
 import { exportWAD, launchWAD } from '../export/wadExport';
 import { exportJSON, importJSON } from '../export/jsonExport';
+import { findSectorOverlaps } from '../map/overlapCheck';
 import { importWad } from '../wad/textureLoader';
 import { toggle3D, is3DActive } from '../3d/view3d';
 import { isRecording, startRecording, stopRecording, generateTestCode, exportRecording } from '../testing/recorder';
@@ -82,6 +83,14 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
   });
 
   document.getElementById('clean-btn')!.addEventListener('click', cleanupMap);
+  document.getElementById('overlap-btn')!.addEventListener('click', () => {
+    const overlaps = findSectorOverlaps();
+    if (overlaps.length === 0) {
+      showToast('No overlapping sectors found');
+    } else {
+      showToast(`${overlaps.length} overlap(s): ${overlaps.map(o => o.reason).join('; ')}`);
+    }
+  });
   document.getElementById('wad-btn')!.addEventListener('click', exportWAD);
   document.getElementById('json-export-btn')!.addEventListener('click', exportJSON);
   document.getElementById('json-import-btn')!.addEventListener('click', importJSON);
