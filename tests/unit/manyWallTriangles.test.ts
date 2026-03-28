@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { maps, setSelected, setMultiSelected, multiSelectType } from '../../src/state/appState';
 import { drawClick, drawComplete } from '../../src/map/drawSession';
-import { findVertexAt, findSectorAt, findLinedefNear, expectNoSectorOverlaps } from './setup';
+import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid } from './setup';
 import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';
 
 describe('recorded test case', () => {
@@ -43,6 +43,6 @@ describe('recorded test case', () => {
     expect(maps.vertices.size).toBe(8);
     expect(maps.linedefs.size).toBe(12);
 
-    expectNoSectorOverlaps();
+    expectMapIsValid();
   });
 });

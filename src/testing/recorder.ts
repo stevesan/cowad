@@ -172,7 +172,7 @@ export function generateTestCode(testSteps: RecordedStep[]): string {
   lines.push(`import { describe, it, expect } from 'vitest';`);
   lines.push(`import { maps, setSelected, setMultiSelected, multiSelectType } from '../../src/state/appState';`);
   lines.push(`import { drawClick, drawComplete } from '../../src/map/drawSession';`);
-  lines.push(`import { findVertexAt, findSectorAt, findLinedefNear, expectNoSectorOverlaps } from './setup';`);
+  lines.push(`import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid } from './setup';`);
   lines.push(`import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';`);
   lines.push(``);
   lines.push(`describe('recorded test case', () => {`);
@@ -234,7 +234,7 @@ export function generateTestCode(testSteps: RecordedStep[]): string {
     }
   }
 
-  lines.push(`    expectNoSectorOverlaps();`);
+  lines.push(`    expectMapIsValid();`);
   lines.push(`  });`);
   lines.push(`});`);
   lines.push(``);

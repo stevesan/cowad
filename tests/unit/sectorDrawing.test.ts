@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { maps } from '../../src/state/appState';
 import { rebuildIndices } from '../../src/state/indices';
 import type { DrawVertex } from '../../src/types';
-import { findVertexAt, expectNoSectorOverlaps } from './setup';
+import { findVertexAt, expectMapIsValid } from './setup';
 
 import { createSectorFromPolygon, splitSector, deleteSelected } from '../../src/map/mapActions';
 import { buildSectorLoopIds, buildSectorPoly } from '../../src/geometry/cycleFinder';
@@ -44,7 +44,7 @@ describe('sector drawing', () => {
     expect(poly).not.toBeNull();
     expect(poly!.length).toBe(3);
 
-    expectNoSectorOverlaps();
+    expectMapIsValid();
   });
 
   it('split square then draw adjacent sector across the split', async () => {
@@ -109,7 +109,7 @@ describe('sector drawing', () => {
     expect(newLoop.has(vidC)).toBe(true);
     expect(newLoop.has(vidB)).toBe(true);
 
-    expectNoSectorOverlaps();
+    expectMapIsValid();
   });
 
   it('delete one sector after split: shared linedef has correct sidedef', async () => {
@@ -190,7 +190,7 @@ describe('sector drawing', () => {
     expect(survivingLoops.length).toBe(1);
     expect(survivingLoops[0].length).toBe(3);
 
-    expectNoSectorOverlaps();
+    expectMapIsValid();
   });
 
   it('pinch vertex: two triangles sharing a vertex produce a single loop', async () => {
@@ -245,7 +245,7 @@ describe('sector drawing', () => {
     expect(allVerts.has(vidD)).toBe(true);
     expect(allVerts.has(vidV)).toBe(true);
 
-    expectNoSectorOverlaps();
+    expectMapIsValid();
   });
 
   it('draw adjacent sector on unsplit square using non-adjacent vertices', async () => {
@@ -286,6 +286,6 @@ describe('sector drawing', () => {
     expect(newLoop.has(vidC)).toBe(true);
     expect(newLoop.has(vidB)).toBe(true);
 
-    expectNoSectorOverlaps();
+    expectMapIsValid();
   });
 });

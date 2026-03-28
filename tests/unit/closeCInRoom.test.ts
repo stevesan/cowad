@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { maps, setSelected } from '../../src/state/appState';
 import { drawClick, drawComplete } from '../../src/map/drawSession';
-import { expectNoSectorOverlaps } from './setup';
+import { expectMapIsValid } from './setup';
 import { deleteSelected } from '../../src/map/mapActions';
 
 describe('recorded test case', () => {
@@ -30,6 +30,6 @@ describe('recorded test case', () => {
     expect(maps.vertices.size).toBe(8);
     expect(maps.linedefs.size).toBe(9);
 
-    expectNoSectorOverlaps();
+    expectMapIsValid();
   });
 });

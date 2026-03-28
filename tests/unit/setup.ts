@@ -89,12 +89,89 @@ export function findLinedefNear(x: number, y: number): string | null {
 
 beforeEach(() => { clearMaps(); drawReset(); });
 
-// ── Sector overlap detection ──
+// ── Map validation ──
 
 export function expectNoSectorOverlaps(): void {
   const overlaps = findSectorOverlaps();
   if (overlaps.length > 0) {
     const o = overlaps[0];
     expect.fail(`Sectors ${o.sectorA} and ${o.sectorB} overlap: ${o.reason}`);
+  }
+}
+
+export function expectMapIsValid(): void {
+  const errors: string[] = [];
+
+  // ── Referential integrity ──
+
+  for (const [lid, ld] of maps.linedefs) {
+    if (!maps.vertices.has(ld.v1)) errors.push(`linedef ${lid}: v1 ${ld.v1} missing`);
+    if (!maps.vertices.has(ld.v2)) errors.push(`linedef ${lid}: v2 ${ld.v2} missing`);
+    if (ld.frontSide && !maps.sidedefs.has(ld.frontSide)) errors.push(`linedef ${lid}: frontSide ${ld.frontSide} missing`);
+    if (ld.backSide && !maps.sidedefs.has(ld.backSide)) errors.push(`linedef ${lid}: backSide ${ld.backSide} missing`);
+  }
+
+  for (const [sdid, sd] of maps.sidedefs) {
+    if (!sd.sector || !maps.sectors.has(sd.sector)) errors.push(`sidedef ${sdid}: sector ${sd.sector} missing`);
+  }
+
+  // ── Degenerate linedefs ──
+
+  for (const [lid, ld] of maps.linedefs) {
+    if (ld.v1 === ld.v2) errors.push(`linedef ${lid}: zero-length (v1 === v2 === ${ld.v1})`);
+  }
+
+  // ── Duplicate linedefs ──
+
+  const ldPairs = new Map<string, string>();
+  for (const [lid, ld] of maps.linedefs) {
+    const key1 = ld.v1 + '|' + ld.v2;
+    const key2 = ld.v2 + '|' + ld.v1;
+    const existing = ldPairs.get(key1) || ldPairs.get(key2);
+    if (existing) errors.push(`linedef ${lid}: duplicate of ${existing} (${ld.v1} <-> ${ld.v2})`);
+    else ldPairs.set(key1, lid);
+  }
+
+  // ── Orphaned vertices ──
+
+  const usedVerts = new Set<string>();
+  for (const [, ld] of maps.linedefs) { usedVerts.add(ld.v1); usedVerts.add(ld.v2); }
+  for (const [vid] of maps.vertices) {
+    if (!usedVerts.has(vid)) errors.push(`vertex ${vid}: orphaned (no linedef references it)`);
+  }
+
+  // ── Orphaned / multiply-owned sidedefs ──
+
+  const sdRefCount = new Map<string, string[]>();
+  for (const [lid, ld] of maps.linedefs) {
+    if (ld.frontSide) (sdRefCount.get(ld.frontSide) ?? (sdRefCount.set(ld.frontSide, []), sdRefCount.get(ld.frontSide)!)).push(lid);
+    if (ld.backSide) (sdRefCount.get(ld.backSide) ?? (sdRefCount.set(ld.backSide, []), sdRefCount.get(ld.backSide)!)).push(lid);
+  }
+  for (const [sdid] of maps.sidedefs) {
+    const refs = sdRefCount.get(sdid);
+    if (!refs) errors.push(`sidedef ${sdid}: orphaned (no linedef references it)`);
+    else if (refs.length > 1) errors.push(`sidedef ${sdid}: owned by multiple linedefs (${refs.join(', ')})`);
+  }
+
+  // ── Degenerate sectors (fewer than 3 sidedefs) ──
+
+  const sectorSdCount = new Map<string, number>();
+  for (const [, sd] of maps.sidedefs) {
+    if (sd.sector) sectorSdCount.set(sd.sector, (sectorSdCount.get(sd.sector) ?? 0) + 1);
+  }
+  for (const [sid] of maps.sectors) {
+    const count = sectorSdCount.get(sid) ?? 0;
+    if (count < 3) errors.push(`sector ${sid}: degenerate (only ${count} sidedef${count === 1 ? '' : 's'})`);
+  }
+
+  // ── Sector overlaps ──
+
+  const overlaps = findSectorOverlaps();
+  for (const o of overlaps) {
+    errors.push(`sectors ${o.sectorA} / ${o.sectorB} overlap: ${o.reason}`);
+  }
+
+  if (errors.length > 0) {
+    expect.fail(`Map validation failed:\n  ${errors.join('\n  ')}`);
   }
 }
