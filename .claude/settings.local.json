@@ -13,7 +13,9 @@
       "Bash(xargs ls:*)",
       "Bash(npx vitest:*)",
       "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(/tmp/recording_analysis.txt:*)",
+      "Read(//tmp/**)"
     ]
   }
 }

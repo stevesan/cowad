@@ -9,13 +9,14 @@ import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { getSelectedThingType } from '../ui/thingBrowser';
 import type { DrawVertex, Linedef, Point } from '../types';
-import { recordSectorDone, recordDeleteBefore, recordDeleteDone } from '../testing/recorder';
+import { recordSectorDone, recordDeleteBefore, recordDeleteDone, recordMergeVertices, recordMergeSectors, recordBridgeLinedefs, recordPlaceThing, recordSplitLinedef, recordDeleteMultiSelected } from '../testing/recorder';
 
 export function placeThing(wx: number, wy: number): void {
   const type = getSelectedThingType();
   const val = { x: wx, y: wy, angle: 0, type, flags: 7 };
   const ref = mapRef('things').push(val);
   record(`map/things/${ref.key}`, null, val);
+  recordPlaceThing(wx, wy);
 }
 
 export function splitLinedefAtPoint(lid: string, wx: number, wy: number): void {
@@ -26,6 +27,7 @@ export function splitLinedefAtPoint(lid: string, wx: number, wy: number): void {
   if (!v1 || !v2) return;
   if ((wx === v1.x && wy === v1.y) || (wx === v2.x && wy === v2.y)) return;
 
+  recordSplitLinedef(lid, wx, wy);
   beginAction();
 
   // Create new vertex at split point
@@ -100,6 +102,7 @@ export function mergeVertices(): void {
     return;
   }
 
+  recordMergeVertices(vidA, vidB);
   beginAction();
 
   // Move B to whichever input vertex is closest to the cursor
@@ -147,6 +150,7 @@ export function mergeSectors(): void {
   const keepSid = sids[sids.length - 1]; // keep the last selected
   const removeSids = new Set(sids.slice(0, -1));
 
+  recordMergeSectors(sids);
   beginAction();
 
   // Repoint all sidedefs referencing removed sectors to the kept sector
@@ -329,6 +333,7 @@ export function deleteSelected(): void {
 export function deleteMultiSelected(): void {
   if (multiSelected.size === 0) return;
 
+  recordDeleteMultiSelected(multiSelected);
   beginAction();
 
   const vidsToDelete = new Set(multiSelected);
@@ -851,5 +856,6 @@ export async function bridgeLinedefs(lid1: string, lid2: string): Promise<void> 
     return;
   }
 
+  recordBridgeLinedefs(lid1, lid2);
   await createSectorFromPolygon(chain, true);
 }

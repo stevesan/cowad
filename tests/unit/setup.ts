@@ -82,6 +82,19 @@ export function findSectorAt(x: number, y: number): string | null {
   return null;
 }
 
+export function findLinedefNear(x: number, y: number): string | null {
+  let best: string | null = null;
+  let bestDist = Infinity;
+  for (const [lid, ld] of maps.linedefs) {
+    const a = maps.vertices.get(ld.v1), b = maps.vertices.get(ld.v2);
+    if (!a || !b) continue;
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    const d = (mx - x) ** 2 + (my - y) ** 2;
+    if (d < bestDist) { bestDist = d; best = lid; }
+  }
+  return best;
+}
+
 beforeEach(() => { clearMaps(); drawReset(); });
 
 // ── Sector overlap detection ──
