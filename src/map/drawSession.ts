@@ -3,7 +3,8 @@ import { snap } from '../canvas/transforms';
 import { nearestVertex, segmentsProperlyIntersect, polyArea, pointInPoly } from '../geometry/hitTest';
 import { VERTEX_PICK_PX } from '../config/ux';
 import { buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
-import { findSectorsContainingBothVertices, anyBoundaryContainsBoth } from '../geometry/sectorQueries';
+import { findSectorsContainingBothVertices, anyBoundaryContainsBoth, findExistingLinedef } from '../geometry/sectorQueries';
+import { signedArea2 } from '../geometry/polygonMath';
 import { createSectorFromPolygon, splitSector } from './mapActions';
 import { showToast } from '../ui/toast';
 import { recordDrawClick, recordDrawComplete } from '../testing/recorder';
@@ -64,6 +65,25 @@ function expandChainWithBoundary(chain: DrawVertex[], sectorId: string): DrawVer
     }
     if (!valid || expanded.length < 3) continue;
     const pts = expanded.map(p => ({ x: p.x, y: p.y }));
+
+    // Check that existing linedefs in this expansion have the required side free.
+    // Without this, non-convex boundaries can produce expansions where
+    // createSectorFromPolygon skips occupied sides, creating degenerate sectors.
+    const ccw = signedArea2(pts) < 0;
+    let sidesOk = true;
+    for (let i = 0; i < expanded.length; i++) {
+      const va = expanded[i], vb = expanded[(i + 1) % expanded.length];
+      if (!va.existingId || !vb.existingId) continue;
+      const existing = findExistingLinedef(maps.linedefs, va.existingId, vb.existingId);
+      if (!existing) continue;
+      const ld = maps.linedefs.get(existing.ldId);
+      if (!ld) continue;
+      const useFront = existing.sameDirection !== ccw;
+      if (useFront && ld.frontSide && !ld.backSide) { sidesOk = false; break; }
+      if (!useFront && ld.backSide && !ld.frontSide) { sidesOk = false; break; }
+    }
+    if (!sidesOk) continue;
+
     const area = polyArea(pts);
     if (area < bestArea) {
       bestArea = area;

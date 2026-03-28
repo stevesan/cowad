@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { maps, setSelected, setMultiSelected, multiSelectType } from '../../src/state/appState';
 import { drawClick, drawComplete } from '../../src/map/drawSession';
-import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid } from './setup';
+import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid, dumpMapJSON } from './setup';
 import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';
 
 describe('recorded test case', () => {
@@ -24,7 +24,7 @@ describe('recorded test case', () => {
     expect(maps.vertices.size).toBe(8);
     expect(maps.linedefs.size).toBe(8);
 
-    setSelected({ type: 'sector', id: findSectorAt(92, 44)! });
+    setSelected({ type: 'sector', id: findSectorAt(117, 0)! });
     deleteSelected();
     expect(maps.sectors.size).toBe(1);
     expect(maps.vertices.size).toBe(8);
@@ -36,6 +36,7 @@ describe('recorded test case', () => {
     expect(maps.vertices.size).toBe(8);
     expect(maps.linedefs.size).toBe(9);
 
+    dumpMapJSON('closeCWallsInRoom');
     expectMapIsValid();
   });
 });

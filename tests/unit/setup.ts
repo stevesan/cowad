@@ -1,10 +1,12 @@
-import { vi, beforeEach, expect } from 'vitest';
+import { vi, beforeEach, onTestFailed, expect } from 'vitest';
 import { maps } from '../../src/state/appState';
 import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, onSidedefAdded, onSidedefChanged, onSidedefRemoved, rebuildIndices } from '../../src/state/indices';
 import { pointInSector } from '../../src/geometry/cycleFinder';
 import { nearestLinedef } from '../../src/geometry/hitTest';
 import { findSectorOverlaps } from '../../src/map/overlapCheck';
 import { drawReset } from '../../src/map/drawSession';
+import { writeFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
 
 // ── Firebase mock ──
 let keyCounter = 0;
@@ -87,7 +89,39 @@ export function findLinedefNear(x: number, y: number): string | null {
   return nearestLinedef(x, y, Infinity);
 }
 
-beforeEach(() => { clearMaps(); drawReset(); });
+const FAILURES_DIR = join(__dirname, 'failures');
+
+function mapToObj(m: Map<string, any>): Record<string, any> {
+  const o: Record<string, any> = {};
+  m.forEach((v, k) => { o[k] = v; });
+  return o;
+}
+
+export function dumpMapJSON(label?: string): string {
+  mkdirSync(FAILURES_DIR, { recursive: true });
+  const data = {
+    version: 1,
+    vertices: mapToObj(maps.vertices),
+    linedefs: mapToObj(maps.linedefs),
+    sidedefs: mapToObj(maps.sidedefs),
+    sectors: mapToObj(maps.sectors),
+    things: mapToObj(maps.things),
+  };
+  const name = (label ?? 'map-dump').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const filePath = join(FAILURES_DIR, `${name}.json`);
+  writeFileSync(filePath, JSON.stringify(data, null, 2));
+  return filePath;
+}
+
+beforeEach(() => {
+  clearMaps();
+  drawReset();
+  onTestFailed(({ task }) => {
+    const name = task.name ?? 'unknown';
+    const path = dumpMapJSON(name);
+    console.log(`Map state dumped to: ${path}`);
+  });
+});
 
 // ── Map validation ──
 
@@ -95,7 +129,8 @@ export function expectNoSectorOverlaps(): void {
   const overlaps = findSectorOverlaps();
   if (overlaps.length > 0) {
     const o = overlaps[0];
-    expect.fail(`Sectors ${o.sectorA} and ${o.sectorB} overlap: ${o.reason}`);
+    const path = dumpMapJSON('sector-overlap');
+    expect.fail(`Sectors ${o.sectorA} and ${o.sectorB} overlap: ${o.reason}\nMap state: ${path}`);
   }
 }
 
@@ -172,6 +207,7 @@ export function expectMapIsValid(): void {
   }
 
   if (errors.length > 0) {
-    expect.fail(`Map validation failed:\n  ${errors.join('\n  ')}`);
+    const path = dumpMapJSON('map-invalid');
+    expect.fail(`Map validation failed:\n  ${errors.join('\n  ')}\nMap state: ${path}`);
   }
 }

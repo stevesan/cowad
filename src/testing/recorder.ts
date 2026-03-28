@@ -1,5 +1,5 @@
 import { maps } from '../state/appState';
-import { buildSectorPoly } from '../geometry/cycleFinder';
+import { buildSectorPoly, pointInSector } from '../geometry/cycleFinder';
 
 export type RecordedStep =
   | { action: 'drawClick'; x: number; y: number }
@@ -29,6 +29,23 @@ export function stopRecording(): RecordedStep[] {
   recording = false;
   pendingDelete = null;
   return steps;
+}
+
+/** Find a point guaranteed to be inside a sector (handles non-convex polygons). */
+function sectorInteriorPoint(sid: string): { x: number; y: number } | null {
+  const poly = buildSectorPoly(sid);
+  if (!poly || poly.length < 3) return null;
+  let cx = 0, cy = 0;
+  for (const p of poly) { cx += p.x; cy += p.y; }
+  cx /= poly.length; cy /= poly.length;
+  if (pointInSector(cx, cy, sid)) return { x: cx, y: cy };
+  // Centroid outside (non-convex) — try centroid of each consecutive vertex triple
+  for (let i = 0; i < poly.length; i++) {
+    const a = poly[i], b = poly[(i + 1) % poly.length], c = poly[(i + 2) % poly.length];
+    const tx = (a.x + b.x + c.x) / 3, ty = (a.y + b.y + c.y) / 3;
+    if (pointInSector(tx, ty, sid)) return { x: tx, y: ty };
+  }
+  return { x: cx, y: cy }; // fallback
 }
 
 function snapshot() {
@@ -74,12 +91,7 @@ export function recordDeleteBefore(type: string, id: string): void {
       if (a && b) pt = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
     }
   } else if (type === 'sector') {
-    const poly = buildSectorPoly(id);
-    if (poly && poly.length >= 3) {
-      let cx = 0, cy = 0;
-      for (const p of poly) { cx += p.x; cy += p.y; }
-      pt = { x: cx / poly.length, y: cy / poly.length };
-    }
+    pt = sectorInteriorPoint(id);
   } else if (type === 'thing') {
     const t = maps.things.get(id);
     if (t) pt = { x: t.x, y: t.y };
@@ -112,12 +124,8 @@ export function recordMergeSectors(sids: string[]): void {
   if (!recording) return;
   const pts: { x: number; y: number }[] = [];
   for (const sid of sids) {
-    const poly = buildSectorPoly(sid);
-    if (poly && poly.length >= 3) {
-      let cx = 0, cy = 0;
-      for (const p of poly) { cx += p.x; cy += p.y; }
-      pts.push({ x: cx / poly.length, y: cy / poly.length });
-    }
+    const pt = sectorInteriorPoint(sid);
+    if (pt) pts.push(pt);
   }
   steps.push({ action: 'mergeSectors', sectorPoints: pts });
   steps.push({ action: 'assertCounts', counts: snapshot() });
