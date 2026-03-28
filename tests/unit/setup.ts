@@ -3,6 +3,7 @@ import { maps } from '../../src/state/appState';
 import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, onSidedefAdded, onSidedefChanged, onSidedefRemoved, rebuildIndices } from '../../src/state/indices';
 import { pointInSector } from '../../src/geometry/cycleFinder';
 import { findSectorOverlaps } from '../../src/map/overlapCheck';
+import { drawReset } from '../../src/map/drawSession';
 
 // ── Firebase mock ──
 let keyCounter = 0;
@@ -81,7 +82,7 @@ export function findSectorAt(x: number, y: number): string | null {
   return null;
 }
 
-beforeEach(() => { clearMaps(); });
+beforeEach(() => { clearMaps(); drawReset(); });
 
 // ── Sector overlap detection ──
 
