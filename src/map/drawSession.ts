@@ -1,13 +1,13 @@
 import { maps, zoom, setDrawPoints } from '../state/appState';
 import { snap } from '../canvas/transforms';
-import { nearestVertex, segmentsProperlyIntersect, polyArea } from '../geometry/hitTest';
+import { nearestVertex, segmentsProperlyIntersect, polyArea, pointInPoly } from '../geometry/hitTest';
 import { VERTEX_PICK_PX } from '../config/ux';
 import { buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
 import { findSectorsContainingBothVertices, anyBoundaryContainsBoth } from '../geometry/sectorQueries';
 import { createSectorFromPolygon, splitSector } from './mapActions';
 import { showToast } from '../ui/toast';
 import { recordDrawClick, recordDrawComplete } from '../testing/recorder';
-import type { DrawVertex } from '../types';
+import type { DrawVertex, Point } from '../types';
 
 let drawChain: DrawVertex[] = [];
 
@@ -109,6 +109,27 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
           }
           if (!anyNewInside) continue;
         }
+
+        // Verify the split line stays inside the target boundary loop.
+        // Without this, non-convex sectors (like C-shapes) or hole loops
+        // can be incorrectly selected for splitting.
+        if (drawChain.length === 2) {
+          const loops = buildSectorLoopIds(cand.sid);
+          let valid = false;
+          for (const loop of loops) {
+            if (loop.includes(first.existingId!) && loop.includes(last.existingId!)) {
+              const poly = loop.map(id => maps.vertices.get(id)).filter((v): v is Point => !!v);
+              if (poly.length >= 3) {
+                const mx = (first.x + last.x) / 2;
+                const my = (first.y + last.y) / 2;
+                valid = pointInPoly(mx, my, poly);
+              }
+              break;
+            }
+          }
+          if (!valid) continue;
+        }
+
         splitSectorId = cand.sid;
         break;
       }
@@ -134,7 +155,7 @@ async function completeSector(checkSplit: boolean = false): Promise<void> {
       if (candidates.length > 0) {
         const expanded = expandChainWithBoundary(drawChain, candidates[0].sid);
         if (expanded) {
-          await createSectorFromPolygon(expanded);
+          await createSectorFromPolygon(expanded, true);
           drawReset();
           return;
         }
