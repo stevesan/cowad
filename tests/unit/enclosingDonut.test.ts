@@ -4,7 +4,7 @@ import { drawClick, drawComplete } from '../../src/map/drawSession';
 import { findVertexAt, findSectorAt, expectMapIsValid } from './setup';
 import { deleteSelected } from '../../src/map/mapActions';
 
-describe('recorded test case', () => {
+describe('enclosing donut', () => {
   it('should produce correct map state', async () => {
     await drawClick(800, 1360);
     await drawClick(960, 1376);

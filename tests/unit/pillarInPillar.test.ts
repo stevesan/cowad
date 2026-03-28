@@ -4,7 +4,7 @@ import { drawClick, drawComplete } from '../../src/map/drawSession';
 import { findVertexAt, findSectorAt, expectMapIsValid } from './setup';
 import { deleteSelected } from '../../src/map/mapActions';
 
-describe('recorded test case', () => {
+describe('pillar in pillar', () => {
   it('should produce correct map state', async () => {
     await drawClick(736, 1360);
     await drawClick(1152, 1376);

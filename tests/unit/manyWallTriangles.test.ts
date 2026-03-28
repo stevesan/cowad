@@ -4,7 +4,7 @@ import { drawClick, drawComplete } from '../../src/map/drawSession';
 import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid } from './setup';
 import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';
 
-describe('recorded test case', () => {
+describe('many wall triangles', () => {
   it('should produce correct map state', async () => {
     await drawClick(-272, 1040);
     await drawClick(160, 1008);
