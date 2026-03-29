@@ -58,7 +58,6 @@ export function renderPanel(): void {
   pEmpty.style.display = 'none'; pContent.style.display = '';
 
   const { type, id } = selected;
-  console.log(selected)
   const col    = type === 'vertex' ? 'vertices' : type + 's';
   const entity = maps[col] && maps[col].get(id);
   if (!entity) { pContent.innerHTML = '<div id="panel-empty">Not found.</div>'; return; }
