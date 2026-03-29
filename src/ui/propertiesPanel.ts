@@ -99,6 +99,7 @@ export function renderPanel(): void {
 
   if (type === 'vertex') {
     const p = (f: string) => `vertices/${id}/${f}`;
+    html += `<div class="prop-row"><label>ID</label><span class="prop-val">${esc(id)}</span></div>`;
     html += numField('X', p('x'), entity.x) + numField('Y', p('y'), entity.y);
 
   } else if (type === 'linedef') {
