@@ -257,8 +257,6 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         } else {
           // Start box select (works on empty space)
           boxSelectAdditive = e.shiftKey;
-          if (!boxSelectAdditive) setMultiSelected(new Set());
-          setSelected(null); renderPanel();
           setBoxSelectStart({ x: wx, y: wy });
         }
       }
@@ -287,12 +285,15 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       setBoxSelectStart(null);
       if (dx < clickThresh && dy < clickThresh) {
         // Tiny drag = click — try sector selection
+        if (!boxSelectAdditive) { setMultiSelected(new Set()); setSelected(null); }
         let found: string | null = null;
         maps.sectors.forEach((_, sid) => {
           if (pointInSector(start.x, start.y, sid)) found = sid;
         });
         if (found) select('sector', found);
+        else renderPanel();
       } else {
+        if (!boxSelectAdditive) setSelected(null);
         const minX = Math.min(start.x, end.x), maxX = Math.max(start.x, end.x);
         const minY = Math.min(start.y, end.y), maxY = Math.max(start.y, end.y);
         const sel = boxSelectAdditive ? new Set(multiSelected) : new Set<string>();
