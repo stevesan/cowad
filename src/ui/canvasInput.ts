@@ -300,6 +300,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
           if (v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY) sel.add(vid);
         });
         setMultiSelected(sel, 'vertex');
+        renderPanel();
       }
       draw();
       return;

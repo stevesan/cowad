@@ -34,6 +34,12 @@ export function renderPanel(): void {
   const pEmpty   = document.getElementById('panel-empty')!;
   const pContent = document.getElementById('panel-content')!;
 
+  if (multiSelectType === 'vertex' && multiSelected.size > 0) {
+    pEmpty.style.display = 'none'; pContent.style.display = '';
+    renderMultiVertexPanel(pContent);
+    return;
+  }
+
   if (multiSelectType === 'sector' && multiSelected.size > 0) {
     pEmpty.style.display = 'none'; pContent.style.display = '';
     renderMultiSectorPanel(pContent);
@@ -52,7 +58,8 @@ export function renderPanel(): void {
   pEmpty.style.display = 'none'; pContent.style.display = '';
 
   const { type, id } = selected;
-  const col    = type + 's';
+  console.log(selected)
+  const col    = type === 'vertex' ? 'vertices' : type + 's';
   const entity = maps[col] && maps[col].get(id);
   if (!entity) { pContent.innerHTML = '<div id="panel-empty">Not found.</div>'; return; }
 
@@ -409,6 +416,45 @@ function applyDoor(sectorId: string, doorType: number, tex: DoorTextures): void 
 
   endAction();
   renderPanel();
+}
+
+function renderMultiVertexPanel(pContent: HTMLElement): void {
+  const vids = [...multiSelected];
+  const verts = vids.map(vid => maps.vertices.get(vid)).filter(Boolean) as any[];
+  if (verts.length === 0) return;
+
+  function commonVal(field: string): number | null {
+    const vals = verts.map(v => v[field]);
+    return vals.every(v => v === vals[0]) ? vals[0] : null;
+  }
+
+  const x = commonVal('x');
+  const y = commonVal('y');
+
+  let html = `<div class="panel-title">vertices <span style="color:#444">${vids.length} selected</span></div>`;
+  html += `<div class="prop-row"><label>X</label>
+    <input type="text" data-multi-field="x" data-numeric data-step="1" value="${x !== null ? x : ''}" placeholder="mixed"></div>`;
+  html += `<div class="prop-row"><label>Y</label>
+    <input type="text" data-multi-field="y" data-numeric data-step="1" value="${y !== null ? y : ''}" placeholder="mixed"></div>`;
+
+  pContent.innerHTML = html;
+
+  pContent.querySelectorAll<HTMLInputElement>('[data-multi-field]').forEach(el => {
+    el.addEventListener('change', () => {
+      const field = el.dataset.multiField!;
+      el.value = String(evalMath(el.value));
+      const val = evalMath(el.value);
+      beginAction();
+      for (const vid of vids) {
+        const entity = maps.vertices.get(vid);
+        if (entity) {
+          record(`map/vertices/${vid}`, { ...entity }, { ...entity, [field]: val });
+          mapRef('vertices').child(vid).update({ [field]: val });
+        }
+      }
+      endAction();
+    });
+  });
 }
 
 function renderMultiSectorPanel(pContent: HTMLElement): void {
