@@ -1,6 +1,7 @@
 import { maps } from '../state/appState';
 import { getLinedefsForSector } from '../state/indices';
 import { pointInPoly, polyArea } from './hitTest';
+import { signedArea2 } from './polygonMath';
 import type { Point } from '../types';
 
 /** Return all boundary loops for a sector as vertex ID arrays.
@@ -105,7 +106,25 @@ export function buildSectorLoopIds(sid: string): string[][] {
     }
   }
 
-  return loops.filter((_, i) => !loopExterior[i]);
+  const result = loops.filter((_, i) => !loopExterior[i]);
+
+  // Fix winding: outer loop (largest) must be CW (signedArea2 > 0),
+  // hole loops must be CCW (signedArea2 < 0).
+  if (result.length > 0) {
+    const polys = result.map(l => l.map(id => maps.vertices.get(id)!));
+    const areas = polys.map(p => signedArea2(p));
+    let outerIdx = 0, maxAbs = 0;
+    for (let i = 0; i < areas.length; i++) {
+      const abs = Math.abs(areas[i]);
+      if (abs > maxAbs) { maxAbs = abs; outerIdx = i; }
+    }
+    if (areas[outerIdx] < 0) result[outerIdx].reverse();
+    for (let i = 0; i < result.length; i++) {
+      if (i !== outerIdx && areas[i] > 0) result[i].reverse();
+    }
+  }
+
+  return result;
 }
 
 /** Return all boundary loops for a sector (outer + holes). */

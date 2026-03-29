@@ -84,11 +84,7 @@ export function buildFloorsCeilings(group: THREE.Group): void {
       if (a > maxArea) { maxArea = a; outerIdx = i; }
     }
 
-    const outerPts = loops[outerIdx];
-    // Ensure CCW for outer boundary
-    const outerArea = signedArea2(outerPts);
-    const outer = outerArea < 0 ? [...outerPts].reverse() : outerPts;
-
+    const outer = loops[outerIdx];
     const shape = new THREE.Shape();
     shape.moveTo(outer[0].x, outer[0].y);
     for (let i = 1; i < outer.length; i++) shape.lineTo(outer[i].x, outer[i].y);
@@ -96,10 +92,7 @@ export function buildFloorsCeilings(group: THREE.Group): void {
     // Add holes
     for (let i = 0; i < loops.length; i++) {
       if (i === outerIdx) continue;
-      const holePts = loops[i];
-      const holeArea = signedArea2(holePts);
-      // Holes should be CW (negative area)
-      const hole = holeArea > 0 ? [...holePts].reverse() : holePts;
+      const hole = loops[i];
       const path = new THREE.Path();
       path.moveTo(hole[0].x, hole[0].y);
       for (let j = 1; j < hole.length; j++) path.lineTo(hole[j].x, hole[j].y);
