@@ -1,7 +1,7 @@
 import { vi, beforeEach, onTestFailed, expect } from 'vitest';
 import { maps } from '../../src/state/appState';
 import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, onSidedefAdded, onSidedefChanged, onSidedefRemoved, rebuildIndices } from '../../src/state/indices';
-import { pointInSector } from '../../src/geometry/cycleFinder';
+import { pointInSector, buildSectorLoopIds } from '../../src/geometry/cycleFinder';
 import { nearestLinedef } from '../../src/geometry/hitTest';
 import { findSectorOverlaps } from '../../src/map/overlapCheck';
 import { drawReset } from '../../src/map/drawSession';
@@ -197,6 +197,50 @@ export function expectMapIsValid(): void {
   for (const [sid] of maps.sectors) {
     const count = sectorSdCount.get(sid) ?? 0;
     if (count < 3) errors.push(`sector ${sid}: degenerate (only ${count} sidedef${count === 1 ? '' : 's'})`);
+  }
+
+  // ── Sidedef sector consistency ──
+  // The cycle finder walks faces on the RIGHT of each directed half-edge.
+  // For linedef v1→v2: front sector is on the RIGHT (its loops contain v1→v2),
+  // back sector is on the LEFT (its loops contain v2→v1).
+
+  const sectorHalfEdges = new Map<string, Set<string>>();
+  for (const [sid] of maps.sectors) {
+    const loops = buildSectorLoopIds(sid);
+    const heSet = new Set<string>();
+    for (const loop of loops) {
+      for (let i = 0; i < loop.length; i++) {
+        heSet.add(loop[i] + '|' + loop[(i + 1) % loop.length]);
+      }
+    }
+    sectorHalfEdges.set(sid, heSet);
+  }
+
+  for (const [lid, ld] of maps.linedefs) {
+    const fwdKey = ld.v1 + '|' + ld.v2;
+    const revKey = ld.v2 + '|' + ld.v1;
+
+    if (ld.frontSide) {
+      const frontSd = maps.sidedefs.get(ld.frontSide);
+      if (frontSd?.sector) {
+        const heSet = sectorHalfEdges.get(frontSd.sector);
+        if (heSet && !heSet.has(fwdKey)) {
+          const detail = heSet.has(revKey) ? ' (sector is on the back side, not the front)' : '';
+          errors.push(`linedef ${lid} (${ld.v1}→${ld.v2}): front sector ${frontSd.sector} does not contain half-edge ${fwdKey}. ${detail}` + `sector ${frontSd.sector}: ` + String([...heSet]));
+        }
+      }
+    }
+
+    if (ld.backSide) {
+      const backSd = maps.sidedefs.get(ld.backSide);
+      if (backSd?.sector) {
+        const heSet = sectorHalfEdges.get(backSd.sector);
+        if (heSet && !heSet.has(revKey)) {
+          const detail = heSet.has(fwdKey) ? ' (sector is on the front side, not the back)' : '';
+          errors.push(`linedef ${lid} (${ld.v1}→${ld.v2}): back sector ${backSd.sector} does not contain half-edge ${revKey} ${detail}` + `sector ${backSd.sector}: ` + String([...heSet]));
+        }
+      }
+    }
   }
 
   // ── Sector overlaps ──
