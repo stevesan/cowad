@@ -299,8 +299,14 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         maps.vertices.forEach((v, vid) => {
           if (v.x >= minX && v.x <= maxX && v.y >= minY && v.y <= maxY) sel.add(vid);
         });
-        setMultiSelected(sel, 'vertex');
-        renderPanel();
+        if (sel.size === 1) {
+          const vid = [...sel][0];
+          setMultiSelected(new Set());
+          select('vertex', vid);
+        } else {
+          setMultiSelected(sel, 'vertex');
+          renderPanel();
+        }
       }
       draw();
       return;
