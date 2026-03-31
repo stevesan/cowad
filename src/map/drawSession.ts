@@ -36,7 +36,7 @@ function validateNewEdge(ax: number, ay: number, bx: number, by: number): boolea
   return true;
 }
 
-async function completeSector(checkSplit: boolean = false): Promise<void> {
+async function completeSector(): Promise<void> {
 }
 
 export async function drawClick(wx: number, wy: number): Promise<void> {
@@ -94,7 +94,7 @@ export async function drawClick(wx: number, wy: number): Promise<void> {
       showToast('Closing edge would intersect'); return;
     }
     drawChain.push({ x: clickX, y: clickY, existingId: clickExisting });
-    await completeSector(true);
+    await completeSector();
     return;
   }
 

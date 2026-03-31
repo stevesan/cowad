@@ -1,15 +1,10 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, mouseWorld, triggerRenderPanel, triggerDraw } from '../state/appState';
-import { buildSectorLoopIds } from '../geometry/cycleFinder';
-import { pointInPoly, polyArea, segmentsProperlyIntersect } from '../geometry/hitTest';
-import { isCCW, computeTestPoint } from '../geometry/polygonMath';
-import { findExistingLinedef, findEnclosingSector, mergeWouldDuplicate } from '../geometry/sectorQueries';
-import { findBoundaryPath } from '../state/indices';
+import { findExistingLinedef, mergeWouldDuplicate } from '../geometry/sectorQueries';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { getSelectedThingType } from '../ui/thingBrowser';
-import type { DrawVertex, Linedef, Point } from '../types';
-import { recordSectorDone, recordDeleteBefore, recordDeleteDone, recordMergeVertices, recordMergeSectors, recordBridgeLinedefs, recordPlaceThing, recordSplitLinedef, recordDeleteMultiSelected } from '../testing/recorder';
+import { recordDeleteBefore, recordDeleteDone, recordMergeVertices, recordMergeSectors, recordPlaceThing, recordSplitLinedef, recordDeleteMultiSelected } from '../testing/recorder';
 
 export function placeThing(wx: number, wy: number): void {
   const type = getSelectedThingType();
