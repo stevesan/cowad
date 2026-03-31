@@ -249,6 +249,56 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
     }
   }
 
+  // Pass 3: fix up linedef flags and sidedef textures
+  const fixedLds = new Set<string>();
+  for (const face of faces) {
+    for (const he of face) {
+      if (fixedLds.has(he.ldId)) continue;
+      fixedLds.add(he.ldId);
+
+      const ld = maps.linedefs.get(he.ldId)!;
+      const twoSided = !!ld.frontSide && !!ld.backSide;
+      const newFlags = twoSided
+        ? (ld.flags | 4) & ~1   // TWO_SIDED on, BLOCKING off
+        : (ld.flags | 1) & ~4;  // BLOCKING on, TWO_SIDED off
+
+      if (newFlags !== ld.flags) {
+        const ldBefore = { ...ld };
+        const ldAfter = { ...ldBefore, flags: newFlags };
+        record(`map/linedefs/${he.ldId}`, ldBefore, ldAfter);
+        mapRef('linedefs').child(he.ldId).update({ flags: newFlags });
+      }
+
+      if (twoSided) {
+        for (const sdId of [ld.frontSide!, ld.backSide!]) {
+          const sd = maps.sidedefs.get(sdId)!;
+          if (sd.mid !== '-' || sd.upper !== 'STARTAN2' || sd.lower !== 'STARTAN2') {
+            const sdBefore = { ...sd };
+            const sdAfter = { ...sd, mid: '-', upper: 'STARTAN2', lower: 'STARTAN2' };
+            record(`map/sidedefs/${sdId}`, sdBefore, sdAfter);
+            mapRef('sidedefs').child(sdId).update({ mid: '-', upper: 'STARTAN2', lower: 'STARTAN2' });
+          }
+        }
+      } else if (ld.frontSide) {
+        const sd = maps.sidedefs.get(ld.frontSide)!;
+        if (!sd.mid || sd.mid === '-') {
+          const sdBefore = { ...sd };
+          const sdAfter = { ...sd, mid: 'STARTAN2' };
+          record(`map/sidedefs/${ld.frontSide}`, sdBefore, sdAfter);
+          mapRef('sidedefs').child(ld.frontSide).update({ mid: 'STARTAN2' });
+        }
+      } else if (ld.backSide) {
+        const sd = maps.sidedefs.get(ld.backSide)!;
+        if (!sd.mid || sd.mid === '-') {
+          const sdBefore = { ...sd };
+          const sdAfter = { ...sd, mid: 'STARTAN2' };
+          record(`map/sidedefs/${ld.backSide}`, sdBefore, sdAfter);
+          mapRef('sidedefs').child(ld.backSide).update({ mid: 'STARTAN2' });
+        }
+      }
+    }
+  }
+
   endAction();
   drawReset();
 }
