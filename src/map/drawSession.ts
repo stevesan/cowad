@@ -39,6 +39,20 @@ function validateNewEdge(ax: number, ay: number, bx: number, by: number): boolea
   return true;
 }
 
+function cloneSector(srcId: string): string {
+  const src = maps.sectors.get(srcId);
+  const secVal = src
+    ? { floor: src.floor, ceiling: src.ceiling, light: src.light,
+        ...(src.special != null ? { special: src.special } : {}),
+        ...(src.tag != null ? { tag: src.tag } : {}),
+        ...(src.floorTex != null ? { floorTex: src.floorTex } : {}),
+        ...(src.ceilTex != null ? { ceilTex: src.ceilTex } : {}) }
+    : { floor: 0, ceiling: 128, light: 160, floorTex: 'FLOOR4_8', ceilTex: 'CEIL3_5' };
+  const secRef = mapRef('sectors').push(secVal);
+  record(`map/sectors/${secRef.key}`, null, secVal);
+  return secRef.key;
+}
+
 async function applyDrawChain(isLoop: boolean): Promise<void> {
   const n = drawChain.length;
   if (n < 2) return;
@@ -92,15 +106,16 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
   }
 
   // Next half-edge in face traversal: arriving at toVid from fromVid via ldId,
-  // find the twin (toVid→fromVid) in toVid's adjacency, then step clockwise
-  // (one index back in the ascending-angle-sorted list).
+  // find the twin (toVid→fromVid) in toVid's adjacency, then step counter-clockwise
+  // (one index forward in the ascending-angle-sorted list).
   function nextHE(fromVid: string, toVid: string, ldId: string): { fromVid: string, toVid: string, ldId: string } {
     const edges = vertexAdj.get(toVid)!;
-    let twinIdx = 0;
+    let twinIdx = -1;
     for (let i = 0; i < edges.length; i++) {
       if (edges[i].toVid === fromVid && edges[i].ldId === ldId) { twinIdx = i; break; }
     }
-    const next = edges[(twinIdx - 1 + edges.length) % edges.length];
+    if(twinIdx === -1) throw new Error('Could not find twin');
+    const next = edges[(twinIdx + 1 + edges.length) % edges.length];
     return { fromVid: toVid, toVid: next.toVid, ldId: next.ldId };
   }
 
@@ -132,24 +147,29 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
       if (loop.length > maps.linedefs.size * 2) break; // safety
     }
 
-    // Interior faces have CCW winding (signedArea2 < 0)
+    // Interior faces have CW winding (signedArea2 > 0)
     const poly: Point[] = loop.map(he => maps.vertices.get(he.fromVid)!);
-    if (signedArea2(poly) < 0) {
+    if (signedArea2(poly) > 0) {
       faces.push(loop);
     }
   }
 
-  // For each enclosed face, create sidedefs for HEs that don't have one
+  // Pass 1: create sidedefs for HEs that don't have one
+  const faceSideIds: string[][] = [];
   for (const face of faces) {
+    const sideIds: string[] = [];
     for (const he of face) {
       const ld = maps.linedefs.get(he.ldId)!;
       const isFront = (he.fromVid === ld.v1);
       const existingSideId = isFront ? ld.frontSide : ld.backSide;
 
-      if (!existingSideId) {
+      if (existingSideId) {
+        sideIds.push(existingSideId);
+      } else {
         const sdVal = { sector: null, xoff: 0, yoff: 0, upper: '-', mid: '-', lower: '-' };
         const sdRef = mapRef('sidedefs').push(sdVal);
         record(`map/sidedefs/${sdRef.key}`, null, sdVal);
+        sideIds.push(sdRef.key);
 
         const ldBefore = { ...ld };
         if (isFront) {
@@ -161,6 +181,70 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
           record(`map/linedefs/${he.ldId}`, ldBefore, ldAfter);
           mapRef('linedefs').child(he.ldId).update({ backSide: sdRef.key });
         }
+      }
+    }
+    faceSideIds.push(sideIds);
+  }
+
+  // Pass 2: assign sectors to each face's sidedefs
+  const usedSectors = new Set<string>();
+
+  for (let fi = 0; fi < faces.length; fi++) {
+    const face = faces[fi];
+    const sideIds = faceSideIds[fi];
+
+    // Do any of the face's own sidedefs already have a sector?
+    let ownSectorId: string | null = null;
+    for (const sdId of sideIds) {
+      const sd = maps.sidedefs.get(sdId);
+      if (sd?.sector) { ownSectorId = sd.sector; break; }
+    }
+
+    let assignSectorId: string;
+    if (ownSectorId) {
+      // A sidedef already has a sector V
+      if (!usedSectors.has(ownSectorId)) {
+        // V not yet used — assign all sidedefs to V
+        assignSectorId = ownSectorId;
+      } else {
+        // V already used — clone it
+        assignSectorId = cloneSector(ownSectorId);
+      }
+    } else {
+      // No sidedefs have sectors — find adjacent sector from opposite sides
+      let adjacentSectorId: string | null = null;
+      for (const he of face) {
+        const ld = maps.linedefs.get(he.ldId)!;
+        const isFront = (he.fromVid === ld.v1);
+        const oppositeSideId = isFront ? ld.backSide : ld.frontSide;
+        if (oppositeSideId) {
+          const oppSd = maps.sidedefs.get(oppositeSideId);
+          if (oppSd?.sector) { adjacentSectorId = oppSd.sector; break; }
+        }
+      }
+
+      if (adjacentSectorId) {
+        // Clone the adjacent sector's properties
+        assignSectorId = cloneSector(adjacentSectorId);
+      } else {
+        // No adjacent sector — create with defaults
+        const secVal = { floor: 0, ceiling: 128, light: 160, floorTex: 'FLOOR4_8', ceilTex: 'CEIL3_5' };
+        const secRef = mapRef('sectors').push(secVal);
+        record(`map/sectors/${secRef.key}`, null, secVal);
+        assignSectorId = secRef.key;
+      }
+    }
+
+    usedSectors.add(assignSectorId);
+
+    // Assign sector to all sidedefs of this face
+    for (const sdId of sideIds) {
+      const sd = maps.sidedefs.get(sdId)!;
+       if (sd.sector !== assignSectorId) {
+        const sdBefore = { ...sd };
+        const sdAfter = { ...sd, sector: assignSectorId };
+        record(`map/sidedefs/${sdId}`, sdBefore, sdAfter);
+        mapRef('sidedefs').child(sdId).update({ sector: assignSectorId });
       }
     }
   }
