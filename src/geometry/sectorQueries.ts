@@ -66,28 +66,6 @@ function collectSectorsFromVertex(vid: string): Set<string> {
 }
 
 /**
- * Find all sectors whose boundary loop contains both vertex IDs.
- * Returns array of { sid, area } sorted by area ascending.
- */
-export function findSectorsContainingBothVertices(
-  vid1: string, vid2: string,
-): { sid: string; area: number }[] {
-  const candidates = collectSectorsFromVertex(vid1);
-  const results: { sid: string; area: number }[] = [];
-  for (const sid of candidates) {
-    for (const loop of buildSectorLoopIds(sid)) {
-      if (loop.includes(vid1) && loop.includes(vid2)) {
-        const poly = buildSectorPoly(sid);
-        if (poly) results.push({ sid, area: polyArea(poly) });
-        break;
-      }
-    }
-  }
-  results.sort((a, b) => a.area - b.area);
-  return results;
-}
-
-/**
  * Check if any sector's boundary loop contains both vertex IDs.
  */
 export function anyBoundaryContainsBoth(vid1: string, vid2: string): boolean {
