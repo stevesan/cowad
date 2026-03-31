@@ -62,7 +62,7 @@ export function renderPanel(): void {
   const entity = maps[col] && maps[col].get(id);
   if (!entity) { pContent.innerHTML = '<div id="panel-empty">Not found.</div>'; return; }
 
-  let html = `<div class="panel-title">${type} <span style="color:#444">${id.slice(-6)}</span></div>`;
+  let html = `<div class="panel-title">${type} <span style="color:#444;text-transform:none">${id}</span></div>`;
 
   function numField(label: string, path: string, val: number | undefined, step = 1): string {
     return `<div class="prop-row"><label>${label}</label>
