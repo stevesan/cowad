@@ -2,12 +2,13 @@ import { mapRef } from '../config/firebase';
 import { maps, zoom, setDrawPoints } from '../state/appState';
 import { snap } from '../canvas/transforms';
 import { nearestVertex, segmentsProperlyIntersect } from '../geometry/hitTest';
+import { signedArea2 } from '../geometry/polygonMath';
 import { VERTEX_PICK_PX } from '../config/ux';
 import { anyBoundaryContainsBoth, findExistingLinedef } from '../geometry/sectorQueries';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { recordDrawClick, recordDrawComplete } from '../testing/recorder';
-import type { DrawVertex } from '../types';
+import type { DrawVertex, Point } from '../types';
 
 let drawChain: DrawVertex[] = [];
 
@@ -73,6 +74,77 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
       activeLines.push(ref.key);
     }
   }
+
+  // Build vertex adjacency from ALL linedefs, sorted by angle
+  const vertexAdj = new Map<string, { angle: number, toVid: string, ldId: string }[]>();
+  function addAdj(fromVid: string, toVid: string, ldId: string) {
+    const f = maps.vertices.get(fromVid), t = maps.vertices.get(toVid);
+    if (!f || !t) return;
+    if (!vertexAdj.has(fromVid)) vertexAdj.set(fromVid, []);
+    vertexAdj.get(fromVid)!.push({ angle: Math.atan2(t.y - f.y, t.x - f.x), toVid, ldId });
+  }
+  for (const [ldId, ld] of maps.linedefs) {
+    addAdj(ld.v1, ld.v2, ldId);
+    addAdj(ld.v2, ld.v1, ldId);
+  }
+  for (const edges of vertexAdj.values()) {
+    edges.sort((a, b) => a.angle - b.angle);
+  }
+
+  // Next half-edge in face traversal: arriving at toVid from fromVid via ldId,
+  // find the twin (toVid→fromVid) in toVid's adjacency, then step clockwise
+  // (one index back in the ascending-angle-sorted list).
+  function nextHE(fromVid: string, toVid: string, ldId: string): { fromVid: string, toVid: string, ldId: string } {
+    const edges = vertexAdj.get(toVid)!;
+    let twinIdx = 0;
+    for (let i = 0; i < edges.length; i++) {
+      if (edges[i].toVid === fromVid && edges[i].ldId === ldId) { twinIdx = i; break; }
+    }
+    const next = edges[(twinIdx - 1 + edges.length) % edges.length];
+    return { fromVid: toVid, toVid: next.toVid, ldId: next.ldId };
+  }
+
+  // Enumerate active-line half-edges
+  const activeSet = new Set(activeLines);
+  type HE = { fromVid: string, toVid: string, ldId: string };
+  const allActiveHEs: HE[] = [];
+  for (const ldId of activeLines) {
+    const ld = maps.linedefs.get(ldId)!;
+    allActiveHEs.push({ fromVid: ld.v1, toVid: ld.v2, ldId });
+    allActiveHEs.push({ fromVid: ld.v2, toVid: ld.v1, ldId });
+  }
+
+  // Traverse faces starting from unvisited active HEs
+  const heKey = (he: HE) => `${he.ldId}:${he.fromVid}`;
+  const visited = new Set<string>();
+  const faces: HE[][] = [];
+
+  for (const startHE of allActiveHEs) {
+    if (visited.has(heKey(startHE))) continue;
+
+    const loop: HE[] = [];
+    let cur = startHE;
+    for (;;) {
+      loop.push(cur);
+      if (activeSet.has(cur.ldId)) visited.add(heKey(cur));
+      cur = nextHE(cur.fromVid, cur.toVid, cur.ldId);
+      if (cur.fromVid === startHE.fromVid && cur.toVid === startHE.toVid && cur.ldId === startHE.ldId) break;
+      if (loop.length > maps.linedefs.size * 2) break; // safety
+    }
+
+    // Interior faces have CCW winding (signedArea2 < 0)
+    const poly: Point[] = loop.map(he => maps.vertices.get(he.fromVid)!);
+    if (signedArea2(poly) < 0) {
+      faces.push(loop);
+    }
+  }
+
+  console.log('faces:', faces.map(face =>
+    face.map(he => {
+      const f = maps.vertices.get(he.fromVid), t = maps.vertices.get(he.toVid);
+      return `(${f?.x},${f?.y})→(${t?.x},${t?.y})`;
+    })
+  ));
 
   endAction();
   drawReset();
