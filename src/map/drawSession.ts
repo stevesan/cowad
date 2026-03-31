@@ -139,12 +139,31 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
     }
   }
 
-  console.log('faces:', faces.map(face =>
-    face.map(he => {
-      const f = maps.vertices.get(he.fromVid), t = maps.vertices.get(he.toVid);
-      return `(${f?.x},${f?.y})→(${t?.x},${t?.y})`;
-    })
-  ));
+  // For each enclosed face, create sidedefs for HEs that don't have one
+  for (const face of faces) {
+    for (const he of face) {
+      const ld = maps.linedefs.get(he.ldId)!;
+      const isFront = (he.fromVid === ld.v1);
+      const existingSideId = isFront ? ld.frontSide : ld.backSide;
+
+      if (!existingSideId) {
+        const sdVal = { sector: null, xoff: 0, yoff: 0, upper: '-', mid: '-', lower: '-' };
+        const sdRef = mapRef('sidedefs').push(sdVal);
+        record(`map/sidedefs/${sdRef.key}`, null, sdVal);
+
+        const ldBefore = { ...ld };
+        if (isFront) {
+          const ldAfter = { ...ldBefore, frontSide: sdRef.key };
+          record(`map/linedefs/${he.ldId}`, ldBefore, ldAfter);
+          mapRef('linedefs').child(he.ldId).update({ frontSide: sdRef.key });
+        } else {
+          const ldAfter = { ...ldBefore, backSide: sdRef.key };
+          record(`map/linedefs/${he.ldId}`, ldBefore, ldAfter);
+          mapRef('linedefs').child(he.ldId).update({ backSide: sdRef.key });
+        }
+      }
+    }
+  }
 
   endAction();
   drawReset();
