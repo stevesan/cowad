@@ -1,8 +1,10 @@
+import { mapRef } from '../config/firebase';
 import { maps, zoom, setDrawPoints } from '../state/appState';
 import { snap } from '../canvas/transforms';
 import { nearestVertex, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { VERTEX_PICK_PX } from '../config/ux';
-import { anyBoundaryContainsBoth } from '../geometry/sectorQueries';
+import { anyBoundaryContainsBoth, findExistingLinedef } from '../geometry/sectorQueries';
+import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { recordDrawClick, recordDrawComplete } from '../testing/recorder';
 import type { DrawVertex } from '../types';
@@ -36,7 +38,44 @@ function validateNewEdge(ax: number, ay: number, bx: number, by: number): boolea
   return true;
 }
 
-async function completeSector(): Promise<void> {
+async function applyDrawChain(isLoop: boolean): Promise<void> {
+  const n = drawChain.length;
+  if (n < 2) return;
+
+  beginAction();
+
+  // Resolve vertex IDs: reuse existing or create new
+  const vertexIds: string[] = [];
+  for (const pt of drawChain) {
+    if (pt.existingId) {
+      vertexIds.push(pt.existingId);
+    } else {
+      const val = { x: pt.x, y: pt.y };
+      const ref = mapRef('vertices').push(val);
+      record(`map/vertices/${ref.key}`, null, val);
+      vertexIds.push(ref.key);
+    }
+  }
+
+  // Create or find linedefs for each edge
+  const edgeCount = isLoop ? n : n - 1;
+  const activeLines: string[] = [];
+  for (let i = 0; i < edgeCount; i++) {
+    const va = vertexIds[i];
+    const vb = vertexIds[(i + 1) % n];
+    const existing = findExistingLinedef(maps.linedefs, va, vb);
+    if (existing) {
+      activeLines.push(existing.ldId);
+    } else {
+      const ldVal = { v1: va, v2: vb, flags: 1 };
+      const ref = mapRef('linedefs').push(ldVal);
+      record(`map/linedefs/${ref.key}`, null, ldVal);
+      activeLines.push(ref.key);
+    }
+  }
+
+  endAction();
+  drawReset();
 }
 
 export async function drawClick(wx: number, wy: number): Promise<void> {
@@ -78,7 +117,7 @@ export async function drawClick(wx: number, wy: number): Promise<void> {
       if (!validateNewEdge(last.x, last.y, first.x, first.y)) {
         showToast('Closing edge would intersect'); return;
       }
-      await completeSector();
+      await applyDrawChain(true);
       return;
     }
   }
@@ -94,7 +133,7 @@ export async function drawClick(wx: number, wy: number): Promise<void> {
       showToast('Closing edge would intersect'); return;
     }
     drawChain.push({ x: clickX, y: clickY, existingId: clickExisting });
-    await completeSector();
+    await applyDrawChain(false);
     return;
   }
 
@@ -115,6 +154,6 @@ export async function drawComplete(): Promise<boolean> {
     return false;
   }
   recordDrawComplete();
-  await completeSector();
+  await applyDrawChain(true);
   return true;
 }
