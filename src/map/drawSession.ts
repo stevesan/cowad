@@ -206,6 +206,7 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
 
   // Enumerate active-line half-edges
   const activeSet = new Set(activeLines);
+  const usedSectors = new Set<string>();
   const allActiveHEs: HE[] = [];
   for (const ldId of activeLines) {
     const ld = maps.linedefs.get(ldId)!;
@@ -234,17 +235,11 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
     // Interior faces have CW winding (signedArea2 > 0)
     const poly: Point[] = loop.map(he => maps.vertices.get(he.fromVid)!);
     if (signedArea2(poly) > 0) {
+      // An interior face.
+      const sideIds = ensureFaceSidedefs(loop);
+      assignFaceSector(loop, sideIds, usedSectors);
       faces.push(loop);
     }
-  }
-
-  // Pass 1: create sidedefs for HEs that don't have one
-  const faceSideIds = faces.map(ensureFaceSidedefs);
-
-  // Pass 2: assign sectors to each face's sidedefs
-  const usedSectors = new Set<string>();
-  for (let fi = 0; fi < faces.length; fi++) {
-    assignFaceSector(faces[fi], faceSideIds[fi], usedSectors);
   }
 
   // Pass 3: fix up linedef flags and sidedef textures
