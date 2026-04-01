@@ -33,14 +33,6 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   maps.linedefs.forEach((ld, lid) => {
     let v1i = vertIdx.get(ld.v1), v2i = vertIdx.get(ld.v2);
     if (v1i == null || v2i == null || v1i === v2i) return;
-    if (!ld.frontSide && ld.backSide) {
-      ld = Object.assign({}, ld, {
-        frontSide: ld.backSide, backSide: null,
-        v1: ld.v2, v2: ld.v1,
-        flags: (ld.flags ?? 1) & ~4 | 1,
-      });
-      const tmp = v1i; v1i = v2i; v2i = tmp;
-    }
     validLinedefs.push({ lid, ld, v1i, v2i });
   });
   const ldIdx = new Map<string, number>();
@@ -87,9 +79,10 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   if (skippedLd)  issues.push(`${skippedLd} degenerate linedef(s) skipped`);
   if (skippedSd)  issues.push(`${skippedSd} orphaned sidedef(s) skipped`);
   if (skippedSec) issues.push(`${skippedSec} orphaned sector(s) skipped`);
-  const missingFront = validLinedefs.filter(({ ld }) =>
-    !ld.frontSide || !sdIdx.has(ld.frontSide)).length;
-  if (missingFront) issues.push(`${missingFront} linedef(s) have no valid front sidedef`);
+  const missingSide = validLinedefs.filter(({ ld }) =>
+    (!ld.frontSide || !sdIdx.has(ld.frontSide)) &&
+    (!ld.backSide  || !sdIdx.has(ld.backSide))).length;
+  if (missingSide) issues.push(`${missingSide} linedef(s) have no valid sidedef`);
 
   console.group('[WAD Export]');
   console.log(`Exporting: ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t`);
@@ -147,12 +140,15 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   // SEGS
   const segList: Seg[] = [];
   for (const { lid, ld, v1i, v2i } of validLinedefs) {
-    if (!ld.frontSide || !sdIdx.has(ld.frontSide)) continue;
+    const hasFront = ld.frontSide && sdIdx.has(ld.frontSide);
+    const hasBack  = ld.backSide  && sdIdx.has(ld.backSide);
+    if (!hasFront && !hasBack) continue;
     const v1 = maps.vertices.get(ld.v1)!, v2 = maps.vertices.get(ld.v2)!;
     const dx = v2.x - v1.x, dy = v2.y - v1.y;
     const ang = Math.round(Math.atan2(dy, dx) / (2 * Math.PI) * 65536) & 0xFFFF;
-    segList.push({ v1: v1i, v2: v2i, angle: ang, linedef: ldIdx.get(lid)!, side: 0, offset: 0 });
-    if (ld.backSide && sdIdx.has(ld.backSide))
+    if (hasFront)
+      segList.push({ v1: v1i, v2: v2i, angle: ang, linedef: ldIdx.get(lid)!, side: 0, offset: 0 });
+    if (hasBack)
       segList.push({ v1: v2i, v2: v1i, angle: (ang + 32768) & 0xFFFF, linedef: ldIdx.get(lid)!, side: 1, offset: 0 });
   }
   const segsBuf = new ArrayBuffer(segList.length * 12);
