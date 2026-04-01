@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { maps, setSelected, setMultiSelected, multiSelectType } from '../../src/state/appState';
 import { drawClick, drawComplete } from '../../src/map/drawSession';
-import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid } from './setup';
+import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid, dumpMapJSON } from './setup';
 import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';
 
 describe('recorded test case', () => {
@@ -18,6 +18,7 @@ describe('recorded test case', () => {
     await drawClick(176, 368);
     await drawClick(496, 416);
     await drawClick(608, 224);
+    dumpMapJSON('extendCInRoom');
     expect(maps.sectors.size).toBe(3);
     expectMapIsValid();
   });
