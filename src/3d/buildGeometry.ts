@@ -274,17 +274,31 @@ export function buildWalls(group: THREE.Group): void {
     const frontSec = frontSd?.sector ? maps.sectors.get(frontSd.sector) : null;
     const backSec = backSd?.sector ? maps.sectors.get(backSd.sector) : null;
 
-    if (!frontSec) return;
+    if (!frontSec && !backSec) return;
+
+    const upperUnpeg = !!(ld.flags & 0x08);
+    const lowerUnpeg = !!(ld.flags & 0x10);
+
+    if (!frontSec) {
+      // Back-only single-sided: render wall from back side (flipped winding)
+      const bFloor = backSec!.floor ?? 0;
+      const bCeil = backSec!.ceiling ?? 128;
+      const bLight = backSec!.light ?? 160;
+      const texName = backSd?.mid || 'STARTAN2';
+      const yoff = backSd?.yoff ?? 0;
+      const wallH = bCeil - bFloor;
+      const adjYoff = lowerUnpeg ? yoff + getTexSize(texName).h - wallH : yoff;
+      makeWallQuad(v2.x, v2.y, v1.x, v1.y, bFloor, bCeil,
+        texName, bLight, backSd?.xoff ?? 0, adjYoff, lid, ld.backSide!, 'mid', group);
+      return;
+    }
 
     const fFloor = frontSec.floor ?? 0;
     const fCeil = frontSec.ceiling ?? 128;
     const fLight = frontSec.light ?? 160;
 
-    const upperUnpeg = !!(ld.flags & 0x08);
-    const lowerUnpeg = !!(ld.flags & 0x10);
-
     if (!backSec) {
-      // Single-sided: full wall
+      // Front-only single-sided: full wall
       // Default: top-aligned; lower unpegged: bottom-aligned
       const texName = frontSd?.mid || 'STARTAN2';
       const yoff = frontSd?.yoff ?? 0;
