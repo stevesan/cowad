@@ -192,6 +192,7 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
     }
   }
 
+  // TODO instead of calling on all linedefs, we need to only do: 1) the LDs we just created, 2) the LDs of the sector that intersect what we just created
   fixSectors(new Set(maps.linedefs.keys()));
   
   endAction();
