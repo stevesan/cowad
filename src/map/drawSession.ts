@@ -1,7 +1,7 @@
 import { mapRef } from '../config/firebase';
 import { maps, zoom, setDrawPoints } from '../state/appState';
 import { snap } from '../canvas/transforms';
-import { nearestVertex, segmentsProperlyIntersect } from '../geometry/hitTest';
+import { nearestVertex, segmentsProperlyIntersect, pointInPoly } from '../geometry/hitTest';
 import { signedArea2 } from '../geometry/polygonMath';
 import { pointInSector } from '../geometry/cycleFinder';
 import { VERTEX_PICK_PX } from '../config/ux';
@@ -192,164 +192,8 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
     }
   }
 
-  // Build vertex adjacency from ALL linedefs, sorted by angle
-  const vertexAdj = new Map<string, { angle: number, toVid: string, ldId: string }[]>();
-  function addAdj(fromVid: string, toVid: string, ldId: string) {
-    const f = maps.vertices.get(fromVid), t = maps.vertices.get(toVid);
-    if (!f || !t) return;
-    if (!vertexAdj.has(fromVid)) vertexAdj.set(fromVid, []);
-    vertexAdj.get(fromVid)!.push({ angle: Math.atan2(t.y - f.y, t.x - f.x), toVid, ldId });
-  }
-  for (const [ldId, ld] of maps.linedefs) {
-    addAdj(ld.v1, ld.v2, ldId);
-    addAdj(ld.v2, ld.v1, ldId);
-  }
-  for (const edges of vertexAdj.values()) {
-    edges.sort((a, b) => a.angle - b.angle);
-  }
-
-  // Next half-edge in face traversal: arriving at toVid from fromVid via ldId,
-  // find the twin (toVid→fromVid) in toVid's adjacency, then step counter-clockwise
-  // (one index forward in the ascending-angle-sorted list).
-  function nextHE(fromVid: string, toVid: string, ldId: string): { fromVid: string, toVid: string, ldId: string } {
-    const edges = vertexAdj.get(toVid)!;
-    let twinIdx = -1;
-    for (let i = 0; i < edges.length; i++) {
-      if (edges[i].toVid === fromVid && edges[i].ldId === ldId) { twinIdx = i; break; }
-    }
-    if(twinIdx === -1) throw new Error('Could not find twin');
-    const next = edges[(twinIdx + 1 + edges.length) % edges.length];
-    return { fromVid: toVid, toVid: next.toVid, ldId: next.ldId };
-  }
-
-  // Enumerate active-line half-edges
-  const activeSet = new Set(activeLines);
-  const usedSectors = new Set<string>();
-  const allActiveHEs: HE[] = [];
-  for (const ldId of activeLines) {
-    const ld = maps.linedefs.get(ldId)!;
-    allActiveHEs.push({ fromVid: ld.v1, toVid: ld.v2, ldId });
-    allActiveHEs.push({ fromVid: ld.v2, toVid: ld.v1, ldId });
-  }
-
-  // Traverse faces starting from unvisited active HEs
-  const heKey = (he: HE) => `${he.ldId}:${he.fromVid}`;
-  const visited = new Set<string>();
-  const faces: HE[][] = [];
-
-  for (const startHE of allActiveHEs) {
-    if (visited.has(heKey(startHE))) continue;
-
-    const loop: HE[] = [];
-    let cur = startHE;
-    for (;;) {
-      loop.push(cur);
-      if (activeSet.has(cur.ldId)) visited.add(heKey(cur));
-      cur = nextHE(cur.fromVid, cur.toVid, cur.ldId);
-      if (cur.fromVid === startHE.fromVid && cur.toVid === startHE.toVid && cur.ldId === startHE.ldId) break;
-      if (loop.length > maps.linedefs.size * 2) break; // safety
-    }
-
-    // Interior faces have CW winding (signedArea2 > 0)
-    const poly: Point[] = loop.map(he => maps.vertices.get(he.fromVid)!);
-    if (signedArea2(poly) > 0) {
-      // An interior face.
-      const sideIds = ensureFaceSidedefs(loop);
-      assignFaceSector(loop, sideIds, usedSectors);
-      faces.push(loop);
-    }
-    else {
-      // Exterior face — find containing sector U.
-      // Case 1: an existing sidedef on this face already references a sector.
-      let containingSector: string | null = null;
-      for (const he of loop) {
-        const ld = maps.linedefs.get(he.ldId)!;
-        const isFront = (he.fromVid === ld.v1);
-        const sdId = isFront ? ld.frontSide : ld.backSide;
-        if (sdId) {
-          const sd = maps.sidedefs.get(sdId);
-          if (sd?.sector) { containingSector = sd.sector; break; }
-        }
-      }
-      // Case 2: check if the first vertex sits inside any sector.
-      if (!containingSector) {
-        const firstV = maps.vertices.get(loop[0].fromVid);
-        if (firstV) {
-          for (const [sid] of maps.sectors) {
-            if (pointInSector(firstV.x, firstV.y, sid)) { containingSector = sid; break; }
-          }
-        }
-      }
-      if (containingSector) {
-        if(usedSectors.has(containingSector)) {
-          throw new Error('A sector containing a new loop was already used - this is a bug. If we split the containing sector earlier, we should have already created a new, unused sector for the prior sidedefs.')
-        }
-        const sideIds = ensureFaceSidedefs(loop);
-        for (const sdId of sideIds) {
-          const sd = maps.sidedefs.get(sdId)!;
-          if (sd.sector !== containingSector) {
-            const sdBefore = { ...sd };
-            const sdAfter = { ...sd, sector: containingSector };
-            record(`map/sidedefs/${sdId}`, sdBefore, sdAfter);
-            mapRef('sidedefs').child(sdId).update({ sector: containingSector });
-          }
-        }
-        usedSectors.add(containingSector);
-        faces.push(loop);
-      }
-    }
-  }
-
-  // Pass 3: fix up linedef flags and sidedef textures
-  const fixedLds = new Set<string>();
-  for (const face of faces) {
-    for (const he of face) {
-      if (fixedLds.has(he.ldId)) continue;
-      fixedLds.add(he.ldId);
-
-      const ld = maps.linedefs.get(he.ldId)!;
-      const twoSided = !!ld.frontSide && !!ld.backSide;
-      const newFlags = twoSided
-        ? (ld.flags | 4) & ~1   // TWO_SIDED on, BLOCKING off
-        : (ld.flags | 1) & ~4;  // BLOCKING on, TWO_SIDED off
-
-      if (newFlags !== ld.flags) {
-        const ldBefore = { ...ld };
-        const ldAfter = { ...ldBefore, flags: newFlags };
-        record(`map/linedefs/${he.ldId}`, ldBefore, ldAfter);
-        mapRef('linedefs').child(he.ldId).update({ flags: newFlags });
-      }
-
-      if (twoSided) {
-        for (const sdId of [ld.frontSide!, ld.backSide!]) {
-          const sd = maps.sidedefs.get(sdId)!;
-          if (sd.mid !== '-' || sd.upper !== 'STARTAN2' || sd.lower !== 'STARTAN2') {
-            const sdBefore = { ...sd };
-            const sdAfter = { ...sd, mid: '-', upper: 'STARTAN2', lower: 'STARTAN2' };
-            record(`map/sidedefs/${sdId}`, sdBefore, sdAfter);
-            mapRef('sidedefs').child(sdId).update({ mid: '-', upper: 'STARTAN2', lower: 'STARTAN2' });
-          }
-        }
-      } else if (ld.frontSide) {
-        const sd = maps.sidedefs.get(ld.frontSide)!;
-        if (!sd.mid || sd.mid === '-') {
-          const sdBefore = { ...sd };
-          const sdAfter = { ...sd, mid: 'STARTAN2' };
-          record(`map/sidedefs/${ld.frontSide}`, sdBefore, sdAfter);
-          mapRef('sidedefs').child(ld.frontSide).update({ mid: 'STARTAN2' });
-        }
-      } else if (ld.backSide) {
-        const sd = maps.sidedefs.get(ld.backSide)!;
-        if (!sd.mid || sd.mid === '-') {
-          const sdBefore = { ...sd };
-          const sdAfter = { ...sd, mid: 'STARTAN2' };
-          record(`map/sidedefs/${ld.backSide}`, sdBefore, sdAfter);
-          mapRef('sidedefs').child(ld.backSide).update({ mid: 'STARTAN2' });
-        }
-      }
-    }
-  }
-
+  fixSectors(new Set(maps.linedefs.keys()));
+  
   endAction();
   drawReset();
 }
@@ -439,4 +283,153 @@ export async function drawComplete(): Promise<boolean> {
   recordDrawComplete();
   await applyDrawChain(true);
   return true;
+}
+
+export function fixSectors(relevantLds: Set<string>): void {
+
+  // Build vertex adjacency from ALL linedefs, sorted by angle.
+  const vertexAdj = new Map<string, { angle: number; toVid: string; ldId: string }[]>();
+  function addAdj(fromVid: string, toVid: string, ldId: string) {
+    const f = maps.vertices.get(fromVid), t = maps.vertices.get(toVid);
+    if (!f || !t) return;
+    if (!vertexAdj.has(fromVid)) vertexAdj.set(fromVid, []);
+    vertexAdj.get(fromVid)!.push({ angle: Math.atan2(t.y - f.y, t.x - f.x), toVid, ldId });
+  }
+  for (const [ldId, ld] of maps.linedefs) {
+    addAdj(ld.v1, ld.v2, ldId);
+    addAdj(ld.v2, ld.v1, ldId);
+  }
+  for (const edges of vertexAdj.values()) {
+    edges.sort((a, b) => a.angle - b.angle);
+  }
+
+  // Next half-edge in planar face traversal.
+  function nextHE(fromVid: string, toVid: string, ldId: string): HE {
+    const edges = vertexAdj.get(toVid)!;
+    let twinIdx = -1;
+    for (let i = 0; i < edges.length; i++) {
+      if (edges[i].toVid === fromVid && edges[i].ldId === ldId) { twinIdx = i; break; }
+    }
+    if (twinIdx === -1) throw new Error('Could not find twin');
+    const next = edges[(twinIdx + 1) % edges.length];
+    return { fromVid: toVid, toVid: next.toVid, ldId: next.ldId };
+  }
+
+  // Enumerate all half-edges from the relevant linedefs.
+  const startHEs: HE[] = [];
+  for (const ldId of relevantLds) {
+    const ld = maps.linedefs.get(ldId)!;
+    startHEs.push({ fromVid: ld.v1, toVid: ld.v2, ldId });
+    startHEs.push({ fromVid: ld.v2, toVid: ld.v1, ldId });
+  }
+
+  // Traverse faces, storing each loop with its signed area.
+  const heKey = (he: HE) => `${he.ldId}:${he.fromVid}`;
+  const visited = new Set<string>();
+  const faces: { loop: HE[]; area2: number }[] = [];
+
+  for (const startHE of startHEs) {
+    if (visited.has(heKey(startHE))) continue;
+
+    const loop: HE[] = [];
+    let cur = startHE;
+    for (;;) {
+      loop.push(cur);
+      if (relevantLds.has(cur.ldId)) visited.add(heKey(cur));
+      cur = nextHE(cur.fromVid, cur.toVid, cur.ldId);
+      if (cur.fromVid === startHE.fromVid && cur.toVid === startHE.toVid && cur.ldId === startHE.ldId) break;
+      if (loop.length > maps.linedefs.size * 2) break; // safety
+    }
+
+    const poly = loop.map(he => maps.vertices.get(he.fromVid)!);
+    faces.push({ loop, area2: signedArea2(poly) });
+  }
+
+  // Build temp sectors: each inward face (area2 > 0) becomes a boundary,
+  // each outward face (area2 < 0) is a hole nested inside the smallest
+  // containing boundary.
+  type TempSector = { boundary: HE[]; holes: HE[][] };
+  const tempSectors: TempSector[] = [];
+
+  const inward = faces.filter(f => f.area2 > 0).sort((a, b) => a.area2 - b.area2);
+  const outward = faces.filter(f => f.area2 < 0);
+
+  // Create a temp sector for every inward loop.
+  for (const f of inward) {
+    tempSectors.push({ boundary: f.loop, holes: [] });
+  }
+
+  // Nest each outward loop (hole) into the smallest inward loop that contains it.
+  for (const hole of outward) {
+    const testPt = maps.vertices.get(hole.loop[0].fromVid)!;
+    let best: TempSector | null = null;
+    for (const ts of tempSectors) {
+      const bPoly = ts.boundary.map(he => maps.vertices.get(he.fromVid)!);
+      if (pointInPoly(testPt.x, testPt.y, bPoly)) {
+        // tempSectors sorted by ascending area, so first match is smallest
+        best = ts;
+        break;
+      }
+    }
+    if (best) best.holes.push(hole.loop);
+  }
+
+  // For every temp sector, ensure all HEs have sidedefs and collect them.
+  function ensureSidedef(he: HE): string {
+    const ld = maps.linedefs.get(he.ldId)!;
+    const isFront = (he.fromVid === ld.v1);
+    const existing = isFront ? ld.frontSide : ld.backSide;
+    if (existing) return existing;
+
+    const sdVal = { sector: null, xoff: 0, yoff: 0, upper: '-', mid: '-', lower: '-' };
+    const sdRef = mapRef('sidedefs').push(sdVal);
+    record(`map/sidedefs/${sdRef.key}`, null, sdVal);
+
+    const ldBefore = { ...ld };
+    const field = isFront ? 'frontSide' : 'backSide';
+    record(`map/linedefs/${he.ldId}`, ldBefore, { ...ldBefore, [field]: sdRef.key });
+    mapRef('linedefs').child(he.ldId).update({ [field]: sdRef.key });
+    return sdRef.key;
+  }
+
+  const usedSectors = new Set<string>();
+
+  for (const ts of tempSectors) {
+    // Collect all HEs (boundary + holes) and ensure sidedefs exist.
+    const allHEs = [...ts.boundary, ...ts.holes.flat()];
+    const sdIds = allHEs.map(ensureSidedef);
+
+    // Find the first sidedef that already has a sector assigned.
+    let sectorU: string | null = null;
+    for (const sdId of sdIds) {
+      const sd = maps.sidedefs.get(sdId);
+      if (sd?.sector) { sectorU = sd.sector; break; }
+    }
+
+    let assignId: string;
+    if (sectorU) {
+      if (!usedSectors.has(sectorU)) {
+        assignId = sectorU;
+      } else {
+        assignId = cloneSector(sectorU);
+      }
+    } else {
+      const secVal = { floor: 0, ceiling: 128, light: 160, floorTex: 'FLOOR4_8', ceilTex: 'CEIL3_5' };
+      const secRef = mapRef('sectors').push(secVal);
+      record(`map/sectors/${secRef.key}`, null, secVal);
+      assignId = secRef.key;
+    }
+
+    usedSectors.add(assignId);
+
+    // Assign all sidedefs to the resolved sector.
+    for (const sdId of sdIds) {
+      const sd = maps.sidedefs.get(sdId)!;
+      if (sd.sector !== assignId) {
+        const sdBefore = { ...sd };
+        record(`map/sidedefs/${sdId}`, sdBefore, { ...sd, sector: assignId });
+        mapRef('sidedefs').child(sdId).update({ sector: assignId });
+      }
+    }
+  }
 }
