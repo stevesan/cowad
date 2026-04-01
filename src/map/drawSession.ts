@@ -6,6 +6,7 @@ import { signedArea2 } from '../geometry/polygonMath';
 import { pointInSector } from '../geometry/cycleFinder';
 import { VERTEX_PICK_PX } from '../config/ux';
 import { anyBoundaryContainsBoth, findExistingLinedef } from '../geometry/sectorQueries';
+import { getLinedefsForSector } from '../state/indices';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { recordDrawClick, recordDrawComplete } from '../testing/recorder';
@@ -192,8 +193,21 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
     }
   }
 
-  // TODO instead of calling on all linedefs, we need to only do: 1) the LDs we just created, 2) the LDs of the sector that intersect what we just created
-  fixSectors(new Set(maps.linedefs.keys()));
+  // Collect activeLines + all linedefs of the containing sector (if any).
+  // TODO also add any outer sides of sectors fully contained by our lines...
+  const relevantLds = new Set(activeLines);
+  let containingSector: string | null = null;
+  for (const [sid] of maps.sectors) {
+    // TODO need to find the *smallest* containing sector, and add its sidedefs.
+    // TODO instead of using the first vert in the chain, use the mid point of the first line we *created*
+    if (pointInSector(drawChain[0].x, drawChain[0].y, sid)) { containingSector = sid; break; }
+  }
+  if (containingSector) {
+    for (const ldId of getLinedefsForSector(containingSector)) {
+      relevantLds.add(ldId);
+    }
+  }
+  fixSectors(relevantLds);
   
   endAction();
   drawReset();
@@ -286,6 +300,7 @@ export async function drawComplete(): Promise<boolean> {
   return true;
 }
 
+// TODO: actually, need to just take a set of sides, to avoid filling in previously empty holes/pillars
 export function fixSectors(relevantLds: Set<string>): void {
 
   // Build vertex adjacency from ALL linedefs, sorted by angle.
