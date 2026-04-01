@@ -31,12 +31,19 @@ describe('map01', () => {
     expect(maps.vertices.size).toBe(8);
     expect(maps.linedefs.size).toBe(8);
 
+    
     await drawClick(-112, 176);
     await drawClick(32, -64);
     await drawClick(176, 160);
+    expect(maps.sectors.size).toBe(2);
+    
     await drawClick(-64, 176);
     await drawClick(32, 16);
     await drawClick(80, 160);
+    expect(maps.sectors.size).toBe(3);
+
+    dumpMapJSON('map01-before-last-sector');
+
     await drawClick(-64, 176);
     await drawClick(-64, 320);
     await drawClick(256, 336);
