@@ -303,6 +303,13 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
   drawReset();
 }
 
+/** Apply an externally-built draw chain (used by bridgeLinedefs etc.). */
+export async function applyExternalDrawChain(chain: DrawVertex[], isLoop: boolean): Promise<void> {
+  drawChain = chain;
+  await applyDrawChain(isLoop);
+  drawReset();
+}
+
 export async function drawClick(wx: number, wy: number): Promise<void> {
   const swx = snap(wx), swy = snap(wy);
   const existingVid = nearestVertex(wx, wy, VERTEX_PICK_PX / zoom);

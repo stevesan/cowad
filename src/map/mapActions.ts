@@ -1,9 +1,11 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, mouseWorld, triggerRenderPanel, triggerDraw } from '../state/appState';
 import { findExistingLinedef, mergeWouldDuplicate } from '../geometry/sectorQueries';
+import { segmentsProperlyIntersect } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { getSelectedThingType } from '../ui/thingBrowser';
+import { applyExternalDrawChain } from './drawSession';
 import { recordDeleteBefore, recordDeleteDone, recordMergeVertices, recordMergeSectors, recordPlaceThing, recordSplitLinedef, recordDeleteMultiSelected } from '../testing/recorder';
 
 export function placeThing(wx: number, wy: number): void {
@@ -408,4 +410,46 @@ export function deleteMultiSelected(): void {
 // ── Bridge two linedefs into a 4-sided sector ──
 
 export async function bridgeLinedefs(lid1: string, lid2: string): Promise<void> {
+  const ld1 = maps.linedefs.get(lid1);
+  const ld2 = maps.linedefs.get(lid2);
+  if (!ld1 || !ld2) return;
+  if (lid1 === lid2) { showToast('Select two different linedefs'); return; }
+
+  const vids1 = [ld1.v1, ld1.v2];
+  const vids2 = [ld2.v1, ld2.v2];
+  if (new Set([...vids1, ...vids2]).size !== 4) {
+    showToast('Cannot bridge: linedefs share a vertex');
+    return;
+  }
+
+  const [a, b] = vids1.map(id => maps.vertices.get(id)!);
+  const [c, d] = vids2.map(id => maps.vertices.get(id)!);
+  if (!a || !b || !c || !d) return;
+
+  // Two possible quadrilateral orderings:
+  // 1: A-B-C-D → new edges B→C and D→A
+  // 2: A-B-D-C → new edges B→D and C→A
+  const crosses = (x1: number, y1: number, x2: number, y2: number,
+                   x3: number, y3: number, x4: number, y4: number) =>
+    segmentsProperlyIntersect(x1, y1, x2, y2, x3, y3, x4, y4);
+
+  const order1ok = !crosses(b.x, b.y, c.x, c.y, d.x, d.y, a.x, a.y);
+  const order2ok = !crosses(b.x, b.y, d.x, d.y, c.x, c.y, a.x, a.y);
+
+  let order: string[];
+  if (order1ok) {
+    order = [ld1.v1, ld1.v2, ld2.v1, ld2.v2];
+  } else if (order2ok) {
+    order = [ld1.v1, ld1.v2, ld2.v2, ld2.v1];
+  } else {
+    showToast('Cannot bridge: connecting edges would intersect');
+    return;
+  }
+
+  const chain = order.map(vid => {
+    const v = maps.vertices.get(vid)!;
+    return { x: v.x, y: v.y, existingId: vid };
+  });
+
+  await applyExternalDrawChain(chain, true);
 }
