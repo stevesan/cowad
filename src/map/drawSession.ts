@@ -86,6 +86,58 @@ function ensureFaceSidedefs(face: HE[]): string[] {
   return sideIds;
 }
 
+/** Resolve or create a sector for a face and assign it to all its sidedefs. */
+function assignFaceSector(face: HE[], sideIds: string[], usedSectors: Set<string>): void {
+  // Do any of the face's own sidedefs already have a sector?
+  let ownSectorId: string | null = null;
+  for (const sdId of sideIds) {
+    const sd = maps.sidedefs.get(sdId);
+    if (sd?.sector) { ownSectorId = sd.sector; break; }
+  }
+
+  let assignSectorId: string;
+  if (ownSectorId) {
+    if (!usedSectors.has(ownSectorId)) {
+      assignSectorId = ownSectorId;
+    } else {
+      assignSectorId = cloneSector(ownSectorId);
+    }
+  } else {
+    // No sidedefs have sectors — find adjacent sector from opposite sides
+    let adjacentSectorId: string | null = null;
+    for (const he of face) {
+      const ld = maps.linedefs.get(he.ldId)!;
+      const isFront = (he.fromVid === ld.v1);
+      const oppositeSideId = isFront ? ld.backSide : ld.frontSide;
+      if (oppositeSideId) {
+        const oppSd = maps.sidedefs.get(oppositeSideId);
+        if (oppSd?.sector) { adjacentSectorId = oppSd.sector; break; }
+      }
+    }
+
+    if (adjacentSectorId) {
+      assignSectorId = cloneSector(adjacentSectorId);
+    } else {
+      const secVal = { floor: 0, ceiling: 128, light: 160, floorTex: 'FLOOR4_8', ceilTex: 'CEIL3_5' };
+      const secRef = mapRef('sectors').push(secVal);
+      record(`map/sectors/${secRef.key}`, null, secVal);
+      assignSectorId = secRef.key;
+    }
+  }
+
+  usedSectors.add(assignSectorId);
+
+  for (const sdId of sideIds) {
+    const sd = maps.sidedefs.get(sdId)!;
+    if (sd.sector !== assignSectorId) {
+      const sdBefore = { ...sd };
+      const sdAfter = { ...sd, sector: assignSectorId };
+      record(`map/sidedefs/${sdId}`, sdBefore, sdAfter);
+      mapRef('sidedefs').child(sdId).update({ sector: assignSectorId });
+    }
+  }
+}
+
 async function applyDrawChain(isLoop: boolean): Promise<void> {
   const n = drawChain.length;
   if (n < 2) return;
@@ -191,65 +243,8 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
 
   // Pass 2: assign sectors to each face's sidedefs
   const usedSectors = new Set<string>();
-
   for (let fi = 0; fi < faces.length; fi++) {
-    const face = faces[fi];
-    const sideIds = faceSideIds[fi];
-
-    // Do any of the face's own sidedefs already have a sector?
-    let ownSectorId: string | null = null;
-    for (const sdId of sideIds) {
-      const sd = maps.sidedefs.get(sdId);
-      if (sd?.sector) { ownSectorId = sd.sector; break; }
-    }
-
-    let assignSectorId: string;
-    if (ownSectorId) {
-      // A sidedef already has a sector V
-      if (!usedSectors.has(ownSectorId)) {
-        // V not yet used — assign all sidedefs to V
-        assignSectorId = ownSectorId;
-      } else {
-        // V already used — clone it
-        assignSectorId = cloneSector(ownSectorId);
-      }
-    } else {
-      // No sidedefs have sectors — find adjacent sector from opposite sides
-      let adjacentSectorId: string | null = null;
-      for (const he of face) {
-        const ld = maps.linedefs.get(he.ldId)!;
-        const isFront = (he.fromVid === ld.v1);
-        const oppositeSideId = isFront ? ld.backSide : ld.frontSide;
-        if (oppositeSideId) {
-          const oppSd = maps.sidedefs.get(oppositeSideId);
-          if (oppSd?.sector) { adjacentSectorId = oppSd.sector; break; }
-        }
-      }
-
-      if (adjacentSectorId) {
-        // Clone the adjacent sector's properties
-        assignSectorId = cloneSector(adjacentSectorId);
-      } else {
-        // No adjacent sector — create with defaults
-        const secVal = { floor: 0, ceiling: 128, light: 160, floorTex: 'FLOOR4_8', ceilTex: 'CEIL3_5' };
-        const secRef = mapRef('sectors').push(secVal);
-        record(`map/sectors/${secRef.key}`, null, secVal);
-        assignSectorId = secRef.key;
-      }
-    }
-
-    usedSectors.add(assignSectorId);
-
-    // Assign sector to all sidedefs of this face
-    for (const sdId of sideIds) {
-      const sd = maps.sidedefs.get(sdId)!;
-       if (sd.sector !== assignSectorId) {
-        const sdBefore = { ...sd };
-        const sdAfter = { ...sd, sector: assignSectorId };
-        record(`map/sidedefs/${sdId}`, sdBefore, sdAfter);
-        mapRef('sidedefs').child(sdId).update({ sector: assignSectorId });
-      }
-    }
+    assignFaceSector(faces[fi], faceSideIds[fi], usedSectors);
   }
 
   // Pass 3: fix up linedef flags and sidedef textures
