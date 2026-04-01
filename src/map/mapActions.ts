@@ -426,15 +426,23 @@ export async function bridgeLinedefs(lid1: string, lid2: string): Promise<void> 
   const [c, d] = vids2.map(id => maps.vertices.get(id)!);
   if (!a || !b || !c || !d) return;
 
+  // Check if a new edge crosses any existing linedef
+  function edgeCrossesExisting(p1x: number, p1y: number, p2x: number, p2y: number): boolean {
+    for (const [, ld] of maps.linedefs) {
+      const v1 = maps.vertices.get(ld.v1), v2 = maps.vertices.get(ld.v2);
+      if (!v1 || !v2) continue;
+      if (segmentsProperlyIntersect(p1x, p1y, p2x, p2y, v1.x, v1.y, v2.x, v2.y)) return true;
+    }
+    return false;
+  }
+
   // Two possible quadrilateral orderings:
   // 1: A-B-C-D → new edges B→C and D→A
   // 2: A-B-D-C → new edges B→D and C→A
-  const crosses = (x1: number, y1: number, x2: number, y2: number,
-                   x3: number, y3: number, x4: number, y4: number) =>
-    segmentsProperlyIntersect(x1, y1, x2, y2, x3, y3, x4, y4);
-
-  const order1ok = !crosses(b.x, b.y, c.x, c.y, d.x, d.y, a.x, a.y);
-  const order2ok = !crosses(b.x, b.y, d.x, d.y, c.x, c.y, a.x, a.y);
+  const order1ok = !segmentsProperlyIntersect(b.x, b.y, c.x, c.y, d.x, d.y, a.x, a.y)
+    && !edgeCrossesExisting(b.x, b.y, c.x, c.y) && !edgeCrossesExisting(d.x, d.y, a.x, a.y);
+  const order2ok = !segmentsProperlyIntersect(b.x, b.y, d.x, d.y, c.x, c.y, a.x, a.y)
+    && !edgeCrossesExisting(b.x, b.y, d.x, d.y) && !edgeCrossesExisting(c.x, c.y, a.x, a.y);
 
   let order: string[];
   if (order1ok) {
