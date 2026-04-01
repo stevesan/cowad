@@ -53,6 +53,39 @@ function cloneSector(srcId: string): string {
   return secRef.key;
 }
 
+type HE = { fromVid: string; toVid: string; ldId: string };
+
+/** Ensure every half-edge in a face has a sidedef; create missing ones. */
+function ensureFaceSidedefs(face: HE[]): string[] {
+  const sideIds: string[] = [];
+  for (const he of face) {
+    const ld = maps.linedefs.get(he.ldId)!;
+    const isFront = (he.fromVid === ld.v1);
+    const existingSideId = isFront ? ld.frontSide : ld.backSide;
+
+    if (existingSideId) {
+      sideIds.push(existingSideId);
+    } else {
+      const sdVal = { sector: null, xoff: 0, yoff: 0, upper: '-', mid: '-', lower: '-' };
+      const sdRef = mapRef('sidedefs').push(sdVal);
+      record(`map/sidedefs/${sdRef.key}`, null, sdVal);
+      sideIds.push(sdRef.key);
+
+      const ldBefore = { ...ld };
+      if (isFront) {
+        const ldAfter = { ...ldBefore, frontSide: sdRef.key };
+        record(`map/linedefs/${he.ldId}`, ldBefore, ldAfter);
+        mapRef('linedefs').child(he.ldId).update({ frontSide: sdRef.key });
+      } else {
+        const ldAfter = { ...ldBefore, backSide: sdRef.key };
+        record(`map/linedefs/${he.ldId}`, ldBefore, ldAfter);
+        mapRef('linedefs').child(he.ldId).update({ backSide: sdRef.key });
+      }
+    }
+  }
+  return sideIds;
+}
+
 async function applyDrawChain(isLoop: boolean): Promise<void> {
   const n = drawChain.length;
   if (n < 2) return;
@@ -121,7 +154,6 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
 
   // Enumerate active-line half-edges
   const activeSet = new Set(activeLines);
-  type HE = { fromVid: string, toVid: string, ldId: string };
   const allActiveHEs: HE[] = [];
   for (const ldId of activeLines) {
     const ld = maps.linedefs.get(ldId)!;
@@ -155,36 +187,7 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
   }
 
   // Pass 1: create sidedefs for HEs that don't have one
-  const faceSideIds: string[][] = [];
-  for (const face of faces) {
-    const sideIds: string[] = [];
-    for (const he of face) {
-      const ld = maps.linedefs.get(he.ldId)!;
-      const isFront = (he.fromVid === ld.v1);
-      const existingSideId = isFront ? ld.frontSide : ld.backSide;
-
-      if (existingSideId) {
-        sideIds.push(existingSideId);
-      } else {
-        const sdVal = { sector: null, xoff: 0, yoff: 0, upper: '-', mid: '-', lower: '-' };
-        const sdRef = mapRef('sidedefs').push(sdVal);
-        record(`map/sidedefs/${sdRef.key}`, null, sdVal);
-        sideIds.push(sdRef.key);
-
-        const ldBefore = { ...ld };
-        if (isFront) {
-          const ldAfter = { ...ldBefore, frontSide: sdRef.key };
-          record(`map/linedefs/${he.ldId}`, ldBefore, ldAfter);
-          mapRef('linedefs').child(he.ldId).update({ frontSide: sdRef.key });
-        } else {
-          const ldAfter = { ...ldBefore, backSide: sdRef.key };
-          record(`map/linedefs/${he.ldId}`, ldBefore, ldAfter);
-          mapRef('linedefs').child(he.ldId).update({ backSide: sdRef.key });
-        }
-      }
-    }
-    faceSideIds.push(sideIds);
-  }
+  const faceSideIds = faces.map(ensureFaceSidedefs);
 
   // Pass 2: assign sectors to each face's sidedefs
   const usedSectors = new Set<string>();
