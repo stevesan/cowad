@@ -100,6 +100,23 @@ function assignFaceSector(face: HE[], sideIds: string[], usedSectors: Set<string
   if (ownSectorId) {
     if (!usedSectors.has(ownSectorId)) {
       assignSectorId = ownSectorId;
+      // If there are other sidedefs referencing this sector (not part of this face),
+      // we're splitting: move them to a new cloned sector.
+      const sideIdsSet = new Set(sideIds);
+      const otherSdIds: string[] = [];
+      for (const [sdId, sd] of maps.sidedefs) {
+        if (sd.sector === ownSectorId && !sideIdsSet.has(sdId)) otherSdIds.push(sdId);
+      }
+      if (otherSdIds.length > 0) {
+        const otherSectorId = cloneSector(ownSectorId);
+        for (const sdId of otherSdIds) {
+          const sd = maps.sidedefs.get(sdId)!;
+          const sdBefore = { ...sd };
+          const sdAfter = { ...sd, sector: otherSectorId };
+          record(`map/sidedefs/${sdId}`, sdBefore, sdAfter);
+          mapRef('sidedefs').child(sdId).update({ sector: otherSectorId });
+        }
+      }
     } else {
       assignSectorId = cloneSector(ownSectorId);
     }
@@ -264,6 +281,9 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
         }
       }
       if (containingSector) {
+        if(usedSectors.has(containingSector)) {
+          throw new Error('A sector containing a new loop was already used - this is a bug. If we split the containing sector earlier, we should have already created a new, unused sector for the prior sidedefs.')
+        }
         const sideIds = ensureFaceSidedefs(loop);
         for (const sdId of sideIds) {
           const sd = maps.sidedefs.get(sdId)!;
