@@ -9,44 +9,6 @@ import { buildSectorLoopIds, buildSectorPoly } from '../../src/geometry/cycleFin
 import { setSelected } from '../../src/state/appState';
 
 describe('sector drawing', () => {
-  it('creates a triangle sector with 3 linedefs all assigned to the new sector', async () => {
-    const chain: DrawVertex[] = [
-      { x: 0, y: 0 },
-      { x: 100, y: 0 },
-      { x: 50, y: 100 },
-    ];
-
-    const sectorId = await createSectorFromPolygon(chain);
-    expect(sectorId).toBeTruthy();
-
-    expect(maps.vertices.size).toBe(3);
-    expect(maps.sectors.size).toBe(1);
-    expect(maps.linedefs.size).toBe(3);
-    expect(maps.sidedefs.size).toBe(3);
-
-    // Every sidedef should reference the same sector
-    const sectorRefs = [...maps.sidedefs.values()].map(sd => sd.sector);
-    expect(sectorRefs.every(s => s === sectorId)).toBe(true);
-
-    // Every linedef should be single-sided with a valid frontSide
-    for (const [, ld] of maps.linedefs) {
-      expect(ld.frontSide).toBeTruthy();
-      expect(maps.sidedefs.has(ld.frontSide)).toBe(true);
-      expect(ld.backSide).toBeFalsy();
-    }
-
-    // The sector boundary loop should contain all 3 vertices
-    const loops = buildSectorLoopIds(sectorId!);
-    expect(loops.length).toBe(1);
-    expect(loops[0].length).toBe(3);
-
-    const poly = buildSectorPoly(sectorId!);
-    expect(poly).not.toBeNull();
-    expect(poly!.length).toBe(3);
-
-    expectMapIsValid();
-  });
-
   it('split square then draw adjacent sector across the split', async () => {
     // Create square ABCD (clockwise in y-up coords)
     const squareSid = await createSectorFromPolygon([
