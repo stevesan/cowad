@@ -2,11 +2,11 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { execFile } = require('child_process');
 const readline = require('readline');
 
 const CONFIG_PATH = path.join(__dirname, 'config.json');
-const TEMP_WAD = path.join(__dirname, 'temp_play.wad');
 const PORT = 3666;
 
 // ── WAD parsing ──
@@ -95,7 +95,8 @@ function launch(cfg, wadBuffer, spawnPos) {
   const iwad = game === 'doom1' ? cfg.doom1Wad : cfg.doom2Wad;
   console.log(`Detected: ${game} ${mapName} | IWAD: ${path.basename(iwad)}`);
 
-  fs.writeFileSync(TEMP_WAD, wadBuffer);
+  const tempWad = path.join(__dirname, crypto.randomUUID() + '.wad');
+  fs.writeFileSync(tempWad, wadBuffer);
 
   // Kill previous instance if still running
   if (childProc && !childProc.killed) {
@@ -103,7 +104,7 @@ function launch(cfg, wadBuffer, spawnPos) {
     childProc.kill();
   }
 
-  const args = ['-iwad', iwad, '-file', TEMP_WAD, '+map', mapName];
+  const args = ['-iwad', iwad, '-file', tempWad, '+map', mapName];
   if (spawnPos) {
     args.push(`+warp ${spawnPos.x} ${spawnPos.y}`);
     console.log(`Spawn position: ${spawnPos.x}, ${spawnPos.y}`);
@@ -114,6 +115,7 @@ function launch(cfg, wadBuffer, spawnPos) {
     if (err && err.killed) return; // we killed it
     if (err) console.error('Launch error:', err.message);
     else console.log('GZDoom exited.');
+    try { fs.unlinkSync(tempWad); } catch {}
   });
 
   childProc.unref();
