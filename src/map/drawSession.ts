@@ -3,6 +3,7 @@ import { maps, zoom, setDrawPoints } from '../state/appState';
 import { snap } from '../canvas/transforms';
 import { nearestVertex, segmentsProperlyIntersect } from '../geometry/hitTest';
 import { signedArea2 } from '../geometry/polygonMath';
+import { pointInSector } from '../geometry/cycleFinder';
 import { VERTEX_PICK_PX } from '../config/ux';
 import { anyBoundaryContainsBoth, findExistingLinedef } from '../geometry/sectorQueries';
 import { beginAction, record, endAction } from '../history/undoRedo';
@@ -239,6 +240,43 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
       const sideIds = ensureFaceSidedefs(loop);
       assignFaceSector(loop, sideIds, usedSectors);
       faces.push(loop);
+    }
+    else {
+      // Exterior face — find containing sector U.
+      // Case 1: an existing sidedef on this face already references a sector.
+      let containingSector: string | null = null;
+      for (const he of loop) {
+        const ld = maps.linedefs.get(he.ldId)!;
+        const isFront = (he.fromVid === ld.v1);
+        const sdId = isFront ? ld.frontSide : ld.backSide;
+        if (sdId) {
+          const sd = maps.sidedefs.get(sdId);
+          if (sd?.sector) { containingSector = sd.sector; break; }
+        }
+      }
+      // Case 2: check if the first vertex sits inside any sector.
+      if (!containingSector) {
+        const firstV = maps.vertices.get(loop[0].fromVid);
+        if (firstV) {
+          for (const [sid] of maps.sectors) {
+            if (pointInSector(firstV.x, firstV.y, sid)) { containingSector = sid; break; }
+          }
+        }
+      }
+      if (containingSector) {
+        const sideIds = ensureFaceSidedefs(loop);
+        for (const sdId of sideIds) {
+          const sd = maps.sidedefs.get(sdId)!;
+          if (sd.sector !== containingSector) {
+            const sdBefore = { ...sd };
+            const sdAfter = { ...sd, sector: containingSector };
+            record(`map/sidedefs/${sdId}`, sdBefore, sdAfter);
+            mapRef('sidedefs').child(sdId).update({ sector: containingSector });
+          }
+        }
+        usedSectors.add(containingSector);
+        faces.push(loop);
+      }
     }
   }
 
