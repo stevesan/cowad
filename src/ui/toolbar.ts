@@ -49,6 +49,7 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
   const recordModal = document.getElementById('record-modal')!;
   const recordOutput = document.getElementById('record-output') as HTMLTextAreaElement;
   let recordSteps: any[] = [];
+  let recordTitle = 'recorded test case';
 
   recordBtn.addEventListener('click', () => {
     if (isRecording()) {
@@ -57,7 +58,8 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
       recordBtn.style.background = '#2a1a1a';
       showToast(`Recording stopped — ${recordSteps.length} step(s)`);
       if (recordSteps.length) {
-        recordOutput.value = generateTestCode(recordSteps);
+        recordTitle = prompt('Test title:') || 'recorded test case';
+        recordOutput.value = generateTestCode(recordSteps, recordTitle);
         recordModal.style.display = 'flex';
       }
     } else {
@@ -69,7 +71,7 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
   });
 
   document.getElementById('record-copy-test')!.addEventListener('click', () => {
-    navigator.clipboard.writeText(generateTestCode(recordSteps));
+    navigator.clipboard.writeText(generateTestCode(recordSteps, recordTitle));
     showToast('Test code copied to clipboard');
   });
 

@@ -174,16 +174,26 @@ export function recordDeleteMultiSelected(vids: Set<string>): void {
 
 // ── Code generation ──
 
-export function generateTestCode(testSteps: RecordedStep[]): string {
+function toCamelCase(title: string): string {
+  return title
+    .replace(/[^a-zA-Z0-9\s]/g, '')
+    .split(/\s+/)
+    .filter(w => w.length > 0)
+    .map((w, i) => i === 0 ? w.toLowerCase() : w[0].toUpperCase() + w.slice(1).toLowerCase())
+    .join('');
+}
+
+export function generateTestCode(testSteps: RecordedStep[], title: string): string {
   const lines: string[] = [];
+  const camelTitle = toCamelCase(title);
 
   lines.push(`import { describe, it, expect } from 'vitest';`);
   lines.push(`import { maps, setSelected, setMultiSelected, multiSelectType } from '../../src/state/appState';`);
   lines.push(`import { drawClick, drawComplete } from '../../src/map/drawSession';`);
-  lines.push(`import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid } from './setup';`);
+  lines.push(`import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid, dumpMapJSON } from './setup';`);
   lines.push(`import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';`);
   lines.push(``);
-  lines.push(`describe('recorded test case', () => {`);
+  lines.push(`describe('${title}', () => {`);
   lines.push(`  it('should produce correct map state', async () => {`);
 
   for (const step of testSteps) {
@@ -242,6 +252,7 @@ export function generateTestCode(testSteps: RecordedStep[]): string {
     }
   }
 
+  lines.push(`    dumpMapJSON('${camelTitle}');`);
   lines.push(`    expectMapIsValid();`);
   lines.push(`  });`);
   lines.push(`});`);
