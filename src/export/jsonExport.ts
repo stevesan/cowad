@@ -1,6 +1,7 @@
 import { maps } from '../state/appState';
 import { db } from '../config/firebase';
 import { showToast } from '../ui/toast';
+import { zoomToFit } from '../canvas/renderer';
 import type { MapCollection } from '../types';
 
 const FORMAT_VERSION = 1;
@@ -46,6 +47,7 @@ async function importFile(file: File): Promise<void> {
     update['map/' + col] = data[col] ?? null;
   }
   await db.ref().update(update);
+  zoomToFit();
   showToast('Map imported from JSON');
 }
 

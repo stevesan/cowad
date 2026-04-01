@@ -1,4 +1,4 @@
-import { maps, selected, hovered, tool, mouseWorld, zoom, drawPoints, multiSelected, multiSelectType, boxSelectStart } from '../state/appState';
+import { maps, pan, selected, hovered, tool, mouseWorld, zoom, setZoom, drawPoints, multiSelected, multiSelectType, boxSelectStart } from '../state/appState';
 import { THINGS, THING_SPRITE } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
 import { getSpritePrefixEntry, isWadLoaded } from '../wad/textureLoader';
@@ -15,6 +15,27 @@ export function initRenderer(c: HTMLCanvasElement): void {
 }
 
 export function getCanvas(): HTMLCanvasElement { return canvas; }
+
+export function zoomToFit(): void {
+  if (!canvas || maps.vertices.size === 0) return;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  maps.vertices.forEach(v => {
+    if (v.x < minX) minX = v.x;
+    if (v.x > maxX) maxX = v.x;
+    if (v.y < minY) minY = v.y;
+    if (v.y > maxY) maxY = v.y;
+  });
+  const padding = 80;
+  const w = maxX - minX || 1;
+  const h = maxY - minY || 1;
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+  const fitZoom = Math.min((canvas.width - padding * 2) / w, (canvas.height - padding * 2) / h);
+  setZoom(Math.max(0.05, Math.min(32, fitZoom)));
+  pan.x = canvas.width / 2 - cx * zoom;
+  pan.y = canvas.height / 2 + cy * zoom;
+  draw();
+}
 
 export function draw(): void {
   if (!canvas) return;
