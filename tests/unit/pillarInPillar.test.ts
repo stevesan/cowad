@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { maps, setSelected } from '../../src/state/appState';
 import { drawClick, drawComplete } from '../../src/map/drawSession';
-import { findVertexAt, findSectorAt, expectMapIsValid } from './setup';
+import { findVertexAt, findSectorAt, expectMapIsValid, dumpMapJSON } from './setup';
 import { deleteSelected } from '../../src/map/mapActions';
 
 describe('pillar in pillar', () => {
@@ -38,6 +38,7 @@ describe('pillar in pillar', () => {
     expect(maps.vertices.size).toBe(11);
     expect(maps.linedefs.size).toBe(11);
 
+    dumpMapJSON('pillarInPillar');
     expectMapIsValid();
   });
 });
