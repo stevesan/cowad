@@ -51,7 +51,11 @@ function saveConfig(cfg) {
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2) + '\n');
 }
 
-async function prompt(rl, question, defaultVal) {
+function cleanPath(p) {
+  return p.replace(/^["']+|["']+$/g, '');
+}
+
+async function promptRaw(rl, question, defaultVal) {
   return new Promise(resolve => {
     const suffix = defaultVal ? ` [${defaultVal}]` : '';
     rl.question(question + suffix + ': ', answer => {
@@ -60,12 +64,27 @@ async function prompt(rl, question, defaultVal) {
   });
 }
 
-function validatePath(p, label) {
-  if (!fs.existsSync(p)) {
-    console.error(`  WARNING: ${label} not found at: ${p}`);
-    return false;
+async function promptPath(rl, question, defaultVal, allowBlank) {
+  while (true) {
+    const raw = await promptRaw(rl, question, defaultVal);
+    const p = cleanPath(raw);
+    if (!p && allowBlank) return '';
+    if (!p) {
+      console.error('  Path is required — try again.');
+      continue;
+    }
+    if (!fs.existsSync(p)) {
+      console.error(`  Not found: ${p} — try again.`);
+      continue;
+    }
+    try {
+      fs.accessSync(p, fs.constants.R_OK);
+    } catch {
+      console.error(`  Cannot read: ${p} — check permissions and try again.`);
+      continue;
+    }
+    return p;
   }
-  return true;
 }
 
 async function configure() {
@@ -75,15 +94,11 @@ async function configure() {
   console.log('\n=== DOOM Launcher Configuration ===\n');
 
   const cfg = {};
-  cfg.portPath = await prompt(rl, 'Path to GZDoom (or other source port)', existing.portPath);
-  cfg.doom1Wad = await prompt(rl, 'Path to DOOM 1 IWAD (doom.wad)', existing.doom1Wad);
-  cfg.doom2Wad = await prompt(rl, 'Path to DOOM 2 IWAD (doom2.wad)', existing.doom2Wad);
+  cfg.portPath = await promptPath(rl, 'Path to GZDoom (or other source port)', existing.portPath, false);
+  cfg.doom1Wad = await promptPath(rl, 'Path to DOOM 1 IWAD (doom.wad, blank to skip)', existing.doom1Wad, true);
+  cfg.doom2Wad = await promptPath(rl, 'Path to DOOM 2 IWAD (doom2.wad, blank to skip)', existing.doom2Wad, true);
 
   rl.close();
-
-  validatePath(cfg.portPath, 'Source port');
-  validatePath(cfg.doom1Wad, 'DOOM 1 IWAD');
-  validatePath(cfg.doom2Wad, 'DOOM 2 IWAD');
 
   saveConfig(cfg);
   console.log(`\nConfig saved to ${CONFIG_PATH}\n`);
