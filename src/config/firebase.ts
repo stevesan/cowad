@@ -40,7 +40,7 @@ const wantConnect = localStorage.getItem(CONNECTED_KEY) === 'true';
 const config = getFirebaseConfig();
 
 if (wantConnect && config) {
-  firebase.initializeApp(config);
+  firebase.initializeApp({ ...config });
   db = firebase.database();
   isConnected = true;
   ready = Promise.resolve();
