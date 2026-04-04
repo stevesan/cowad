@@ -6,7 +6,11 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const readline = require('readline');
 
-const CONFIG_PATH = path.join(__dirname, 'config.json');
+// When packaged with pkg, __dirname points to a snapshot filesystem that isn't
+// writable. Use the directory where the executable lives instead for config and
+// temp files.
+const APP_DIR = process.pkg ? path.dirname(process.execPath) : __dirname;
+const CONFIG_PATH = path.join(APP_DIR, 'config.json');
 const PORT = 3666;
 
 // ── WAD parsing ──
@@ -95,7 +99,7 @@ function launch(cfg, wadBuffer, spawnPos) {
   const iwad = game === 'doom1' ? cfg.doom1Wad : cfg.doom2Wad;
   console.log(`Detected: ${game} ${mapName} | IWAD: ${path.basename(iwad)}`);
 
-  const tempWad = path.join(__dirname, crypto.randomUUID() + '.wad');
+  const tempWad = path.join(APP_DIR, crypto.randomUUID() + '.wad');
   fs.writeFileSync(tempWad, wadBuffer);
 
   // Kill previous instance if still running

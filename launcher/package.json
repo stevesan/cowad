@@ -1,0 +1,23 @@
+{
+  "name": "cowad-launcher",
+  "version": "1.0.0",
+  "description": "DOOM launcher server for CoWad editor",
+  "bin": "server.js",
+  "scripts": {
+    "build": "pkg . --out-path dist",
+    "build:win": "pkg . --target node18-win-x64 --out-path dist",
+    "build:mac": "pkg . --target node18-macos-x64 --out-path dist",
+    "build:all": "pkg . --target node18-win-x64,node18-macos-x64,node18-macos-arm64 --out-path dist"
+  },
+  "pkg": {
+    "outputPath": "dist",
+    "targets": [
+      "node18-win-x64",
+      "node18-macos-x64",
+      "node18-macos-arm64"
+    ]
+  },
+  "devDependencies": {
+    "@yao-pkg/pkg": "^6.0.0"
+  }
+}
