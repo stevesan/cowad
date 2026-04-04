@@ -94,7 +94,7 @@ async function configure() {
   console.log('\n=== DOOM Launcher Configuration ===\n');
 
   const cfg = {};
-  cfg.portPath = await promptPath(rl, 'Path to GZDoom (or other source port)', existing.portPath, false);
+  cfg.portPath = await promptPath(rl, 'Path to GZDoom or compatible source port (e.g. LZDoom)', existing.portPath, false);
   cfg.doom1Wad = await promptPath(rl, 'Path to DOOM 1 IWAD (doom.wad, blank to skip)', existing.doom1Wad, true);
   cfg.doom2Wad = await promptPath(rl, 'Path to DOOM 2 IWAD (doom2.wad, blank to skip)', existing.doom2Wad, true);
 
