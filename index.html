@@ -38,6 +38,7 @@
   <button id="clear-btn">Clear</button>
   <span id="coords">0, 0</span>
   <span id="users"></span>
+  <button id="settings-btn" style="display:none;background:#222;border:1px solid #444;color:#888;padding:3px 6px;cursor:pointer;border-radius:3px;font-size:14px;line-height:1;" title="Firebase settings">&#9881;</button>
   <button id="connect-btn" style="display:none;background:#1a1a2e;border:1px solid #446;color:#88f;padding:3px 10px;cursor:pointer;border-radius:3px;font-size:12px;font-family:monospace;">Connect</button>
   <span id="status">Connecting…</span>
 </div>
@@ -67,8 +68,8 @@
 </div>
 
 <script>
-// Only load Firebase SDK if user previously opted in
-if (localStorage.getItem('cowad-firebase-connected') === 'true') {
+// Only load Firebase SDK if user previously connected and has config saved
+if (localStorage.getItem('cowad-firebase-connected') === 'true' && localStorage.getItem('cowad-firebase-config')) {
   document.write('<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"><\/script>');
   document.write('<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"><\/script>');
 }

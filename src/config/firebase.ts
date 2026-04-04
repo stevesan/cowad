@@ -1,21 +1,32 @@
 import { createLocalDb } from './localDb';
 
-const requiredVars = [
-  'VITE_FIREBASE_API_KEY',
-  'VITE_FIREBASE_AUTH_DOMAIN',
-  'VITE_FIREBASE_DATABASE_URL',
-  'VITE_FIREBASE_PROJECT_ID',
-  'VITE_FIREBASE_STORAGE_BUCKET',
-  'VITE_FIREBASE_MESSAGING_SENDER_ID',
-  'VITE_FIREBASE_APP_ID',
-] as const;
+const CONFIG_KEY = 'cowad-firebase-config';
+const CONNECTED_KEY = 'cowad-firebase-connected';
 
-const STORAGE_KEY = 'cowad-firebase-connected';
+interface FirebaseConfig {
+  apiKey: string;
+  authDomain: string;
+  databaseURL: string;
+  projectId: string;
+  storageBucket: string;
+  messagingSenderId: string;
+  appId: string;
+}
 
-const hasAllVars = requiredVars.every(k => import.meta.env[k]);
+export function hasFirebaseConfig(): boolean {
+  return localStorage.getItem(CONFIG_KEY) !== null;
+}
 
-/** True if Firebase env vars are present (connect button should be shown) */
-export const firebaseAvailable: boolean = hasAllVars;
+export function getFirebaseConfig(): FirebaseConfig | null {
+  try {
+    const raw = localStorage.getItem(CONFIG_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+export function saveFirebaseConfig(config: FirebaseConfig): void {
+  localStorage.setItem(CONFIG_KEY, JSON.stringify(config));
+}
 
 /** True if currently using the real Firebase backend */
 export let isConnected: boolean = false;
@@ -25,17 +36,11 @@ let db: FirebaseDatabase;
 /** Resolves when the database is ready (IndexedDB loaded, or Firebase connected) */
 export let ready: Promise<void>;
 
-if (hasAllVars && localStorage.getItem(STORAGE_KEY) === 'true') {
-  const firebaseConfig = {
-    apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-    authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-    databaseURL: import.meta.env.VITE_FIREBASE_DATABASE_URL,
-    projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-    storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-    messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-    appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  };
-  firebase.initializeApp(firebaseConfig);
+const wantConnect = localStorage.getItem(CONNECTED_KEY) === 'true';
+const config = getFirebaseConfig();
+
+if (wantConnect && config) {
+  firebase.initializeApp(config);
   db = firebase.database();
   isConnected = true;
   ready = Promise.resolve();
@@ -50,12 +55,12 @@ export function mapRef(col: string): FirebaseRef { return db.ref('map/' + col); 
 
 /** Connect to Firebase and reload the page */
 export function connectFirebase(): void {
-  localStorage.setItem(STORAGE_KEY, 'true');
+  localStorage.setItem(CONNECTED_KEY, 'true');
   location.reload();
 }
 
 /** Disconnect from Firebase and reload the page */
 export function disconnectFirebase(): void {
-  localStorage.setItem(STORAGE_KEY, 'false');
+  localStorage.setItem(CONNECTED_KEY, 'false');
   location.reload();
 }
