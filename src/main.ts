@@ -1,6 +1,6 @@
 import './styles/main.css';
 import './config/firebase';
-import { db, mapRef } from './config/firebase';
+import { db, mapRef, firebaseAvailable, isConnected, connectFirebase, disconnectFirebase } from './config/firebase';
 import { pan, setCallbacks } from './state/appState';
 import { initRenderer, draw, zoomToFit } from './canvas/renderer';
 import { renderPanel } from './ui/propertiesPanel';
@@ -33,8 +33,32 @@ document.getElementById('snap-size-sel')!.addEventListener('change', e => {
 });
 
 initSync();
-initPresence();
 initDropImport();
+
+// --- Connection UI ---
+const statusEl = document.getElementById('status')!;
+const usersEl = document.getElementById('users')!;
+const connectBtn = document.getElementById('connect-btn') as HTMLButtonElement | null;
+
+if (isConnected) {
+  // Real Firebase — enable presence tracking
+  initPresence();
+  if (connectBtn) {
+    connectBtn.textContent = 'Disconnect';
+    connectBtn.style.display = '';
+    connectBtn.addEventListener('click', disconnectFirebase);
+  }
+} else {
+  // Local mode
+  statusEl.textContent = 'Local';
+  statusEl.className = 'connected';
+  usersEl.textContent = '';
+  if (firebaseAvailable && connectBtn) {
+    connectBtn.textContent = 'Connect';
+    connectBtn.style.display = '';
+    connectBtn.addEventListener('click', connectFirebase);
+  }
+}
 
 resize();
 pan.x = canvas.width  / 2;

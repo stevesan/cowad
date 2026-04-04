@@ -15,7 +15,8 @@
       "Bash(grep -E \"\\\\.\\(ts|js\\)$\")",
       "Bash(xargs grep:*)",
       "Bash(/tmp/recording_analysis.txt:*)",
-      "Read(//tmp/**)"
+      "Read(//tmp/**)",
+      "Bash(xargs cat:*)"
     ]
   }
 }
