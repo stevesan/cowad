@@ -1,5 +1,5 @@
 // In-memory database implementing the Firebase compat SDK interface.
-// Used when Firebase env vars are missing or user hasn't connected.
+// Uses IndexedDB for persistence (localStorage is too small for IWAD textures).
 
 type Listener = (snapshot: FirebaseSnapshot) => void;
 
@@ -22,23 +22,44 @@ class LocalSnapshot implements FirebaseSnapshot {
   }
 }
 
-const STORAGE_KEY = 'cowad-local-db';
+const IDB_NAME = 'cowad-local';
+const IDB_STORE = 'data';
+const IDB_KEY = 'store';
 
-// Global data store — nested object tree, hydrated from localStorage
+// Global data store — nested object tree, hydrated from IndexedDB
 const store: Record<string, any> = {};
 
-function loadFromStorage(): void {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) Object.assign(store, JSON.parse(raw));
-  } catch { /* ignore corrupt data */ }
+let idb: IDBDatabase | null = null;
+
+function openIdb(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore(IDB_STORE); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+function loadFromIdb(): Promise<void> {
+  return openIdb().then(database => {
+    idb = database;
+    return new Promise<void>(resolve => {
+      const tx = database.transaction(IDB_STORE, 'readonly');
+      const req = tx.objectStore(IDB_STORE).get(IDB_KEY);
+      req.onsuccess = () => {
+        if (req.result) Object.assign(store, req.result);
+        resolve();
+      };
+      req.onerror = () => resolve(); // start even if load fails
+    });
+  }).catch(() => {}); // IndexedDB unavailable — run in-memory only
 }
 
 function persist(): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+  if (!idb) return;
+  const tx = idb.transaction(IDB_STORE, 'readwrite');
+  tx.objectStore(IDB_STORE).put(structuredClone(store), IDB_KEY);
 }
-
-loadFromStorage();
 
 // Listeners keyed by path, then event type
 const listeners = new Map<string, ListenerEntry[]>();
@@ -67,7 +88,6 @@ function readPath(segments: string[]): any {
 /** Write a value into the nested store by path segments, creating intermediates */
 function writePath(segments: string[], value: any): void {
   if (segments.length === 0) {
-    // Root write — merge keys
     if (value == null) {
       for (const k of Object.keys(store)) delete store[k];
     } else if (typeof value === 'object') {
@@ -92,7 +112,6 @@ function writePath(segments: string[], value: any): void {
 
 /** Fire child_added/changed/removed and value listeners after a path write */
 function fireListeners(fullPath: string, segments: string[], oldVal: any, newVal: any): void {
-  // Determine the parent path and child key for child_* events
   if (segments.length >= 2) {
     const parentPath = segments.slice(0, -1).join('/');
     const childKey = segments[segments.length - 1];
@@ -100,17 +119,14 @@ function fireListeners(fullPath: string, segments: string[], oldVal: any, newVal
     const isRemoved = newVal == null;
 
     if (!wasExisting && !isRemoved) {
-      // child_added
       for (const cb of getListeners(parentPath, 'child_added')) {
         cb(new LocalSnapshot(childKey, newVal));
       }
     } else if (wasExisting && isRemoved) {
-      // child_removed
       for (const cb of getListeners(parentPath, 'child_removed')) {
         cb(new LocalSnapshot(childKey, oldVal));
       }
     } else if (wasExisting && !isRemoved) {
-      // child_changed
       for (const cb of getListeners(parentPath, 'child_changed')) {
         cb(new LocalSnapshot(childKey, newVal));
       }
@@ -122,7 +138,7 @@ function fireListeners(fullPath: string, segments: string[], oldVal: any, newVal
     cb(new LocalSnapshot(segments[segments.length - 1] || '', newVal ?? null));
   }
 
-  // Fire 'value' listeners on parent (for things like presence)
+  // Fire 'value' listeners on parent
   if (segments.length >= 2) {
     const parentPath = segments.slice(0, -1).join('/');
     const parentVal = readPath(segments.slice(0, -1));
@@ -139,7 +155,6 @@ class LocalRef implements FirebaseRef {
   private _path: string;
 
   constructor(path: string) {
-    // Normalize: strip leading/trailing slashes
     this._path = path.replace(/^\/+|\/+$/g, '');
   }
 
@@ -236,7 +251,7 @@ class LocalRef implements FirebaseRef {
   }
 
   onDisconnect(): { remove(): void } {
-    return { remove() {} }; // no-op locally
+    return { remove() {} };
   }
 }
 
@@ -246,6 +261,8 @@ class LocalDatabase implements FirebaseDatabase {
   }
 }
 
-export function createLocalDb(): FirebaseDatabase {
-  return new LocalDatabase();
+/** Creates a local DB and returns it along with a ready promise that resolves once IndexedDB data is loaded. */
+export function createLocalDb(): { db: FirebaseDatabase; ready: Promise<void> } {
+  const ready = loadFromIdb();
+  return { db: new LocalDatabase(), ready };
 }

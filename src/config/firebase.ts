@@ -22,8 +22,10 @@ export let isConnected: boolean = false;
 
 let db: FirebaseDatabase;
 
+/** Resolves when the database is ready (IndexedDB loaded, or Firebase connected) */
+export let ready: Promise<void>;
+
 if (hasAllVars && localStorage.getItem(STORAGE_KEY) === 'true') {
-  // User previously chose to connect and env vars are present
   const firebaseConfig = {
     apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
     authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -36,9 +38,11 @@ if (hasAllVars && localStorage.getItem(STORAGE_KEY) === 'true') {
   firebase.initializeApp(firebaseConfig);
   db = firebase.database();
   isConnected = true;
+  ready = Promise.resolve();
 } else {
-  // Local-only mode
-  db = createLocalDb();
+  const local = createLocalDb();
+  db = local.db;
+  ready = local.ready;
 }
 
 export { db };

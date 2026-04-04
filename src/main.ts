@@ -1,6 +1,6 @@
 import './styles/main.css';
 import './config/firebase';
-import { db, mapRef, firebaseAvailable, isConnected, connectFirebase, disconnectFirebase } from './config/firebase';
+import { db, mapRef, ready, firebaseAvailable, isConnected, connectFirebase, disconnectFirebase } from './config/firebase';
 import { pan, setCallbacks } from './state/appState';
 import { initRenderer, draw, zoomToFit } from './canvas/renderer';
 import { renderPanel } from './ui/propertiesPanel';
@@ -32,7 +32,6 @@ document.getElementById('snap-size-sel')!.addEventListener('change', e => {
   db.ref('settings/snapSize').set(val);
 });
 
-initSync();
 initDropImport();
 
 // --- Connection UI ---
@@ -41,7 +40,6 @@ const usersEl = document.getElementById('users')!;
 const connectBtn = document.getElementById('connect-btn') as HTMLButtonElement | null;
 
 if (isConnected) {
-  // Real Firebase — enable presence tracking
   initPresence();
   if (connectBtn) {
     connectBtn.textContent = 'Disconnect';
@@ -49,7 +47,6 @@ if (isConnected) {
     connectBtn.addEventListener('click', disconnectFirebase);
   }
 } else {
-  // Local mode
   statusEl.textContent = 'Local';
   statusEl.className = 'connected';
   usersEl.textContent = '';
@@ -65,7 +62,10 @@ pan.x = canvas.width  / 2;
 pan.y = canvas.height / 2;
 draw();
 
-// After initial data loads, zoom to fit all geometry
-mapRef('vertices').once('value').then(() => {
-  setTimeout(zoomToFit, 100);
+// Wait for IndexedDB to load (instant for Firebase mode), then start syncing
+ready.then(() => {
+  initSync();
+  mapRef('vertices').once('value').then(() => {
+    setTimeout(zoomToFit, 100);
+  });
 });
