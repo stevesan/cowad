@@ -1,6 +1,6 @@
 import { vi, beforeEach, onTestFailed, expect } from 'vitest';
 import { maps } from '../../src/state/appState';
-import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, onSidedefAdded, onSidedefChanged, onSidedefRemoved, rebuildIndices } from '../../src/state/indices';
+import { rebuildIndices } from '../../src/state/indices';
 import { pointInSector, buildSectorLoopIds } from '../../src/geometry/cycleFinder';
 import { nearestLinedef } from '../../src/geometry/hitTest';
 import { findSectorOverlaps } from '../../src/map/overlapCheck';
@@ -8,72 +8,28 @@ import { drawReset } from '../../src/map/drawSession';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
-// ── Firebase mock ──
-let keyCounter = 0;
-function nextKey() { return 'k' + (++keyCounter); }
+// ── Firebase mock — backed by real localDb ──
 
-vi.mock('../../src/config/firebase', () => {
-  const makeRef = (basePath: string) => ({
-    push: (val: any) => {
-      const key = nextKey();
-      const col = basePath.replace('map/', '');
-      if ((maps as any)[col]) (maps as any)[col].set(key, { ...val });
-      if (col === 'linedefs' && val.v1 && val.v2) onLinedefAdded(key, val.v1, val.v2);
-      else if (col === 'sidedefs' && val.sector) onSidedefAdded(key, val.sector);
-      const result = Promise.resolve({ key }) as any;
-      result.key = key;
-      return result;
-    },
-    child: (id: string) => ({
-      update: (val: any) => {
-        const col = basePath.replace('map/', '');
-        if ((maps as any)[col]) {
-          const existing = (maps as any)[col].get(id);
-          if (existing) {
-            const oldV1 = existing.v1, oldV2 = existing.v2, oldSector = existing.sector;
-            (maps as any)[col].set(id, { ...existing, ...val });
-            if (col === 'linedefs') { const u = (maps as any)[col].get(id); onLinedefChanged(id, u.v1, u.v2, oldV1, oldV2); }
-            else if (col === 'sidedefs') { const u = (maps as any)[col].get(id); onSidedefChanged(id, u.sector, oldSector); }
-          }
-        }
-        return Promise.resolve();
-      },
-      remove: () => {
-        const col = basePath.replace('map/', '');
-        if (col === 'linedefs') { const e = (maps as any)[col]?.get(id); if (e) onLinedefRemoved(id, e.v1, e.v2); }
-        else if (col === 'sidedefs') { const e = (maps as any)[col]?.get(id); if (e) onSidedefRemoved(id, e.sector); }
-        if ((maps as any)[col]) (maps as any)[col].delete(id);
-        return Promise.resolve();
-      },
-    }),
-    set: () => Promise.resolve(),
-    remove: () => Promise.resolve(),
-    on: () => {},
-    once: () => Promise.resolve({ val: () => null }),
-    onDisconnect: () => ({ remove: () => {} }),
-  });
+vi.mock('../../src/config/firebase', async () => {
+  const { createLocalDb } = await vi.importActual<typeof import('../../src/config/localDb')>('../../src/config/localDb');
+  const local = createLocalDb();
   return {
-    db: { ref: (p: string) => makeRef(p || '') },
-    mapRef: (col: string) => makeRef('map/' + col),
+    db: local.db,
+    mapRef: (col: string) => local.db.ref('map/' + col),
+    isConnected: false,
+    ready: local.ready,
   };
 });
 
 vi.mock('../../src/history/undoRedo', () => ({ beginAction: () => {}, record: () => {}, endAction: () => {} }));
 vi.mock('../../src/ui/toast', () => ({ showToast: () => {} }));
-vi.mock('../../src/canvas/renderer', () => ({ draw: () => {} }));
+vi.mock('../../src/canvas/renderer', () => ({ draw: () => {}, zoomToFit: () => {} }));
 vi.mock('../../src/ui/propertiesPanel', () => ({ renderPanel: () => {} }));
-vi.mock('../../src/ui/thingBrowser', () => ({ getSelectedThingType: () => 1, setSelectedThingType: () => {} }));
-vi.mock('../../src/wad/textureLoader', () => ({ getTextureDataUrl: () => null, isWadLoaded: () => false, getSpritePrefixEntry: () => null }));
+vi.mock('../../src/ui/thingBrowser', () => ({ getSelectedThingType: () => 1, setSelectedThingType: () => {}, updateToolbarButton: () => {} }));
+vi.mock('../../src/wad/textureLoader', () => ({ getTextureDataUrl: () => null, isWadLoaded: () => false, getSpritePrefixEntry: () => null, loadTexturesFromDb: () => Promise.resolve() }));
 
-export function clearMaps() {
-  maps.vertices.clear();
-  maps.linedefs.clear();
-  maps.sidedefs.clear();
-  maps.sectors.clear();
-  maps.things.clear();
-  rebuildIndices();
-  keyCounter = 0;
-}
+import { resetLocalDb } from '../../src/config/localDb';
+import { initSync } from '../../src/sync/firebaseSync';
 
 export function findVertexAt(x: number, y: number): string | null {
   for (const [id, v] of maps.vertices) if (v.x === x && v.y === y) return id;
@@ -114,7 +70,14 @@ export function dumpMapJSON(label?: string): string {
 }
 
 beforeEach(() => {
-  clearMaps();
+  resetLocalDb();
+  maps.vertices.clear();
+  maps.linedefs.clear();
+  maps.sidedefs.clear();
+  maps.sectors.clear();
+  maps.things.clear();
+  rebuildIndices();
+  initSync();
   drawReset();
   onTestFailed(({ task }) => {
     const name = task.name ?? 'unknown';

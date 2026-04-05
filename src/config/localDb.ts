@@ -305,6 +305,13 @@ class LocalDatabase implements FirebaseDatabase {
   }
 }
 
+/** Clear all data and listeners (for testing). */
+export function resetLocalDb(): void {
+  for (const k of Object.keys(store)) delete store[k];
+  listeners.clear();
+  pushCounter = 0;
+}
+
 /** Creates a local DB and returns it along with a ready promise that resolves once IndexedDB data is loaded. */
 export function createLocalDb(): { db: FirebaseDatabase; ready: Promise<void> } {
   const ready = loadFromIdb();
