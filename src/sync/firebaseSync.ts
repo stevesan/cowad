@@ -67,7 +67,7 @@ export function initSync(): void {
     }
   });
 
-  db.ref('settings/gameType').on('value', (s: FirebaseSnapshot) => {
+  db.ref('map/gameType').on('value', (s: FirebaseSnapshot) => {
     const val = s.val();
     if (val === 'doom1' || val === 'doom2') setGameType(val);
   });

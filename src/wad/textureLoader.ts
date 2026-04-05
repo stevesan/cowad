@@ -1,7 +1,8 @@
 import { parseWad, getLump, getLumpsBetween, type WadFile } from './wadReader';
 import { db } from '../config/firebase';
 import { THING_SPRITE } from '../config/constants';
-import { setGameType } from '../state/appState';
+import { gameType as currentGameType, setGameType } from '../state/appState';
+import { showToast } from '../ui/toast';
 import type { GameType } from '../types';
 
 export interface TextureEntry {
@@ -379,6 +380,15 @@ export async function importWad(file: File): Promise<{ flats: number; walls: num
   const palette = parsePalette(wad);
 
   const detected = detectGameType(wad);
+  const prev = currentGameType;
+
+  if (prev !== detected) {
+    const names: Record<GameType, string> = { doom1: 'DOOM', doom2: 'DOOM 2' };
+    if (!confirm(`Map is ${names[prev]} but imported WAD is ${names[detected]}. Switch to ${names[detected]}?`)) {
+      throw new Error('Import cancelled — game type mismatch');
+    }
+  }
+
   setGameType(detected);
 
   const flats = extractFlats(wad, palette);
@@ -392,7 +402,7 @@ export async function importWad(file: File): Promise<{ flats: number; walls: num
   // Persist to Firebase (replace any previous IWAD)
   await saveTexturesToDb();
   await saveSpritesToDb();
-  await db.ref('settings/gameType').set(detected);
+  await db.ref('map/gameType').set(detected);
 
   return { flats: flats.length, walls: walls.length, gameType: detected };
 }

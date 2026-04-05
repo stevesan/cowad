@@ -1,4 +1,4 @@
-import { maps } from '../state/appState';
+import { maps, gameType } from '../state/appState';
 import { db } from '../config/firebase';
 import { showToast } from '../ui/toast';
 import { zoomToFit } from '../canvas/renderer';
@@ -14,7 +14,7 @@ function mapToObj(m: Map<string, any>): Record<string, any> {
 }
 
 export function exportJSON(): void {
-  const data: Record<string, any> = { version: FORMAT_VERSION };
+  const data: Record<string, any> = { version: FORMAT_VERSION, gameType };
   for (const col of COLLECTIONS) {
     data[col] = mapToObj(maps[col]);
   }
@@ -45,6 +45,9 @@ async function importFile(file: File): Promise<void> {
   const update: Record<string, any> = {};
   for (const col of COLLECTIONS) {
     update['map/' + col] = data[col] ?? null;
+  }
+  if (data.gameType === 'doom1' || data.gameType === 'doom2') {
+    update['map/gameType'] = data.gameType;
   }
   await db.ref().update(update);
   zoomToFit();
