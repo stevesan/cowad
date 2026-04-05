@@ -175,6 +175,10 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       setPanStart({ mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y });
       e.preventDefault(); return;
     }
+    if (e.button === 2 && tool === 'draw') {
+      drawComplete().then(() => draw());
+      return;
+    }
     if (e.button !== 0) return;
 
     const { sx, sy } = getCanvasXY(e);
