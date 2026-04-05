@@ -1,11 +1,11 @@
 import {
   maps, tool, selected, hovered, pan, zoom, isPanning, panStart,
-  spaceDown, dragState, mouseWorld, multiSelected, multiSelectType, boxSelectStart, activeSide,
+  spaceDown, dragState, mouseWorld, multiSelected, multiSelectType, boxSelectStart, activeSide, snapSize,
   setSelected, setHovered, setZoom, setIsPanning, setPanStart,
   setSpaceDown, setDragState, setMouseWorld, setTool,
   setMultiSelected, setBoxSelectStart, setActiveSide,
 } from '../state/appState';
-import { mapRef } from '../config/firebase';
+import { db, mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
 import { nearestVertex, nearestLinedef, nearestThing } from '../geometry/hitTest';
 import { VERTEX_PICK_PX, LINEDEF_PICK_PX, THING_PICK_PX } from '../config/ux';
@@ -427,6 +427,15 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
         bridgeLinedefs(a, b);
       }
       else mergeVertices();
+      return;
+    }
+    if (e.key === '[' || e.key === ']') {
+      const sizes = [1, 2, 4, 8, 16, 32, 64];
+      const cur = sizes.indexOf(snapSize);
+      const next = e.key === '[' ? Math.max(0, cur - 1) : Math.min(sizes.length - 1, cur + 1);
+      if (next !== cur) {
+        db.ref('settings/snapSize').set(sizes[next]);
+      }
       return;
     }
     if (e.key === 'Tab') {
