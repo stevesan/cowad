@@ -22,7 +22,8 @@
       "Bash(gh api:*)",
       "Bash(curl -s https://api.github.com/repos/jacobenget/doom.wasm/releases/tags/v0.1.0)",
       "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); [print\\(a['name'], a['size'], a['browser_download_url']\\) for a in d['assets']]\")",
-      "Bash(timeout 3 ./cowad-launcher.exe --help)"
+      "Bash(timeout 3 ./cowad-launcher.exe --help)",
+      "WebFetch(domain:doomwiki.org)"
     ]
   }
 }
