@@ -92,6 +92,7 @@ export function computeLoopHierarchy(faces: { loop: HE[]; area2: number }[]): Lo
     let parent: LoopNode | null = null;
     // We use i+1 because for 2-sided loops, there are 2 loops of the same abs size. If you started at i-1, you may miss the twin.
     for (let j = Math.min(i + 1, nodes.length-1); j >= 0; j--) {
+      if(i === j) continue;
       if (contains(nodes[j], v)) {
         parent = nodes[j];
         break;
