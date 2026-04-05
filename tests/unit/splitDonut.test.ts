@@ -4,21 +4,23 @@ import { drawClick, drawComplete } from '../../src/map/drawSession';
 import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid, dumpMapJSON } from './setup';
 import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';
 
-describe('splitAndExtend', () => {
+describe('splitDonut', () => {
   it('should produce correct map state', async () => {
-    await drawClick(-208, 240);
-    await drawClick(104, 240);
-    await drawClick(128, -72);
-    await drawClick(-152, -48);
+    await drawClick(0, 0);
+    await drawClick(256, 0);
+    await drawClick(256, 256);
+    await drawClick(0, 256);
     await drawComplete();
-    await drawClick(-208, 240);
-    await drawClick(128, -72);
-    await drawClick(-208, 240);
-    await drawClick(-40, 336);
-    await drawClick(-208, 240);
-    await drawClick(272, 360);
-    await drawClick(128, -72);
-    dumpMapJSON('splitandextend');
+    await drawClick(64, 64);
+    await drawClick(192, 64);
+    await drawClick(192, 192);
+    await drawClick(64, 192);
+    await drawComplete();
+    await drawClick(64, 192);
+    await drawClick(0, 256);
+    await drawClick(192, 192);
+    await drawClick(256, 256);
+    dumpMapJSON('splitdonut');
     expect(maps.sectors.size).toBe(3);
     expectMapIsValid();
   });
