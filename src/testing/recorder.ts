@@ -11,7 +11,8 @@ export type RecordedStep =
   | { action: 'bridgeLinedefs'; mid1: { x: number; y: number }; mid2: { x: number; y: number } }
   | { action: 'placeThing'; x: number; y: number }
   | { action: 'splitLinedef'; ldMid: { x: number; y: number }; splitX: number; splitY: number }
-  | { action: 'assertCounts'; counts: { sectors: number; vertices: number; linedefs: number; sidedefs: number } };
+  | { action: 'assertCounts'; counts: { sectors: number; vertices: number; linedefs: number; sidedefs: number } }
+  | { action: 'setSectorProperty'; sectorPoint: { x: number; y: number }; field: string; value: string | number };
 
 let recording = false;
 let steps: RecordedStep[] = [];
@@ -172,6 +173,15 @@ export function recordDeleteMultiSelected(vids: Set<string>): void {
   steps.push({ action: 'assertCounts', counts: snapshot() });
 }
 
+// ── Hooks called from propertiesPanel ──
+
+export function recordSetSectorProperty(sectorId: string, field: string, value: string | number): void {
+  if (!recording) return;
+  const pt = sectorInteriorPoint(sectorId);
+  if (!pt) return;
+  steps.push({ action: 'setSectorProperty', sectorPoint: pt, field, value });
+}
+
 // ── Code generation ──
 
 function toCamelCase(title: string): string {
@@ -190,7 +200,7 @@ export function generateTestCode(testSteps: RecordedStep[], title: string): stri
   lines.push(`import { describe, it, expect } from 'vitest';`);
   lines.push(`import { maps, setSelected, setMultiSelected, multiSelectType } from '../../src/state/appState';`);
   lines.push(`import { drawClick, drawComplete } from '../../src/map/drawSession';`);
-  lines.push(`import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid, dumpMapJSON } from './setup';`);
+  lines.push(`import { findVertexAt, findSectorAt, findLinedefNear, setSectorProperty, expectMapIsValid, dumpMapJSON } from './setup';`);
   lines.push(`import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';`);
   lines.push(``);
   lines.push(`describe('${title}', () => {`);
@@ -243,6 +253,11 @@ export function generateTestCode(testSteps: RecordedStep[], title: string): stri
       case 'splitLinedef':
         lines.push(`    splitLinedefAtPoint(findLinedefNear(${step.ldMid.x}, ${step.ldMid.y})!, ${step.splitX}, ${step.splitY});`);
         break;
+      case 'setSectorProperty': {
+        const val = typeof step.value === 'string' ? `'${step.value}'` : step.value;
+        lines.push(`    setSectorProperty(findSectorAt(${step.sectorPoint.x}, ${step.sectorPoint.y})!, '${step.field}', ${val});`);
+        break;
+      }
       case 'assertCounts':
         lines.push(`    expect(maps.sectors.size).toBe(${step.counts.sectors});`);
         lines.push(`    expect(maps.vertices.size).toBe(${step.counts.vertices});`);

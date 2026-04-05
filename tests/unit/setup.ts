@@ -45,6 +45,12 @@ export function findLinedefNear(x: number, y: number): string | null {
   return nearestLinedef(x, y, Infinity);
 }
 
+export function setSectorProperty(sectorId: string, field: string, value: string | number): void {
+  const sector = maps.sectors.get(sectorId);
+  if (!sector) return;
+  (sector as any)[field] = value;
+}
+
 const FAILURES_DIR = join(__dirname, 'failures');
 
 function mapToObj(m: Map<string, any>): Record<string, any> {

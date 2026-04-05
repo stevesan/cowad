@@ -5,6 +5,7 @@ import { deleteSelected } from '../map/mapActions';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { getTextureDataUrl, isWadLoaded, getTextures } from '../wad/textureLoader';
 import { openTextureBrowser } from './textureBrowser';
+import { recordSetSectorProperty } from '../testing/recorder';
 
 function texPreviewStyle(name: string, maxH = 24): string {
   const entry = getTextures().get(name.toUpperCase());
@@ -160,6 +161,7 @@ export function renderPanel(): void {
         endAction();
       }
       mapRef(c).child(i).update({ [f]: val });
+      if (c === 'sectors') recordSetSectorProperty(i, f, val);
     });
   });
 
@@ -196,6 +198,7 @@ export function renderPanel(): void {
             endAction();
           }
           mapRef(c).child(i).update({ [f]: name });
+          if (c === 'sectors') recordSetSectorProperty(i, f, name);
           renderPanel();
         },
       });
@@ -521,6 +524,7 @@ function renderMultiSectorPanel(pContent: HTMLElement): void {
         }
       }
       endAction();
+      for (const sid of sids) recordSetSectorProperty(sid, field, val);
     });
   });
 
@@ -543,6 +547,7 @@ function renderMultiSectorPanel(pContent: HTMLElement): void {
             }
           }
           endAction();
+          for (const sid of sids) recordSetSectorProperty(sid, field, name);
           renderPanel();
         },
       });
