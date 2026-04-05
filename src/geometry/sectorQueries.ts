@@ -1,8 +1,7 @@
 import type { Linedef } from '../types';
 import { maps } from '../state/appState';
 import { vertexToLinedefs } from '../state/indices';
-import { buildSectorLoopIds, buildSectorPoly, pointInSector } from './cycleFinder';
-import { polyArea } from './hitTest';
+import { buildSectorLoopIds } from './cycleFinder';
 
 /** Find an existing linedef connecting two vertices; report direction. */
 export function findExistingLinedef(
@@ -11,17 +10,6 @@ export function findExistingLinedef(
   for (const [lid, ld] of linedefs) {
     if (ld.v1 === va && ld.v2 === vb) return { ldId: lid, sameDirection: true };
     if (ld.v1 === vb && ld.v2 === va) return { ldId: lid, sameDirection: false };
-  }
-  return null;
-}
-
-/** Find which sector a point is inside (accounting for holes via even-odd rule). */
-export function findEnclosingSector(
-  px: number, py: number,
-  sectorIds: Iterable<string>,
-): string | null {
-  for (const sid of sectorIds) {
-    if (pointInSector(px, py, sid)) return sid;
   }
   return null;
 }

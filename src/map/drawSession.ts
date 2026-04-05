@@ -3,14 +3,12 @@ import { maps, zoom, setDrawPoints } from '../state/appState';
 import { snap } from '../canvas/transforms';
 import { nearestVertex, segmentsProperlyIntersect, pointInPoly } from '../geometry/hitTest';
 import { signedArea2 } from '../geometry/polygonMath';
-import { pointInSector } from '../geometry/cycleFinder';
 import { VERTEX_PICK_PX } from '../config/ux';
 import { anyBoundaryContainsBoth, findExistingLinedef } from '../geometry/sectorQueries';
-import { getLinedefsForSector } from '../state/indices';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { recordDrawClick, recordDrawComplete } from '../testing/recorder';
-import type { DrawVertex, Point } from '../types';
+import type { DrawVertex } from '../types';
 
 let drawChain: DrawVertex[] = [];
 
