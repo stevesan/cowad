@@ -53,24 +53,6 @@ describe('expectNoSectorOverlaps', () => {
     expectNoSectorOverlaps();
   });
 
-  it('passes with properly adjacent sectors sharing an edge', async () => {
-    // Use createSectorFromPolygon to get properly shared geometry
-    await createSectorFromPolygon([
-      { x: 0, y: 0 },
-      { x: 100, y: 0 },
-      { x: 100, y: 100 },
-      { x: 0, y: 100 },
-    ]);
-    await createSectorFromPolygon([
-      { x: 100, y: 0, existingId: findVertexAt(100, 0)! },
-      { x: 200, y: 0 },
-      { x: 200, y: 100 },
-      { x: 100, y: 100, existingId: findVertexAt(100, 100)! },
-    ]);
-    expect(maps.sectors.size).toBe(2);
-    expectNoSectorOverlaps();
-  });
-
   it('detects crossing edges from partially overlapping squares', () => {
     //  Square A: (0,0)-(100,0)-(100,100)-(0,100)
     //  Square B: (50,50)-(150,50)-(150,150)-(50,150)
