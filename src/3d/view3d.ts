@@ -1,9 +1,11 @@
 import * as THREE from 'three';
-import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide, snapSize, multiSelected, multiSelectType, setMultiSelected, multiSelectedSides, setMultiSelectedSides } from '../state/appState';
+import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide, snapSize, multiSelected, multiSelectType, setMultiSelected, multiSelectedSides, setMultiSelectedSides, tool } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { renderPanel } from '../ui/propertiesPanel';
 import { draw } from '../canvas/renderer';
 import { showToast } from '../ui/toast';
+import { placeThing } from '../map/mapActions';
+import { snap } from '../canvas/transforms';
 import { buildFloorsCeilings, buildWalls, buildThings, clearTexCache } from './buildGeometry';
 import { pointInSector } from '../geometry/cycleFinder';
 import { beginAction, record, endAction } from '../history/undoRedo';
@@ -117,6 +119,18 @@ function ensureInit(): void {
   renderer.domElement.addEventListener('click', (e: MouseEvent) => {
     if (justUnlocked) { justUnlocked = false; return; }
     if (!pointerLocked) {
+      // Thing tool: place thing at click position
+      if (tool === 'thing') {
+        raycaster.setFromCamera(unlockedMouse, camera);
+        const hits = raycaster.intersectObjects(sceneGroup.children, false);
+        if (hits.length > 0) {
+          const p = hits[0].point;
+          beginAction();
+          placeThing(snap(p.x), snap(-p.z));
+          endAction();
+        }
+        return;
+      }
       // Unlocked: raycast from cursor to select/shift-select
       raycaster.setFromCamera(unlockedMouse, camera);
       const hits = raycaster.intersectObjects(sceneGroup.children, false);
@@ -198,6 +212,19 @@ function ensureInit(): void {
   renderer.domElement.addEventListener('contextmenu', (e: Event) => e.preventDefault());
   renderer.domElement.addEventListener('mousedown', (e: MouseEvent) => {
     if (pointerLocked) {
+      // Thing tool: place thing at crosshair hit point
+      if (e.button === 0 && tool === 'thing') {
+        mouse.set(0, 0);
+        raycaster.setFromCamera(mouse, camera);
+        const hits = raycaster.intersectObjects(sceneGroup.children, false);
+        if (hits.length > 0) {
+          const p = hits[0].point;
+          beginAction();
+          placeThing(snap(p.x), snap(-p.z));
+          endAction();
+        }
+        return;
+      }
       // Left-click or right-click: exit pointer lock so user can select
       if (e.button === 0 || e.button === 2) document.exitPointerLock();
     } else {
