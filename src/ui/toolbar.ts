@@ -106,6 +106,13 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
     renderPanel();
   });
 
+  document.getElementById('reset-local-btn')!.addEventListener('click', () => {
+    if (!confirm('Are you sure? This will reset all your local settings. Make sure all your work is exported to a JSON file!')) return;
+    localStorage.clear();
+    indexedDB.deleteDatabase('cowad-local');
+    location.reload();
+  });
+
   // Overflow menu toggle
   const overflowToggle = document.querySelector('.overflow-toggle')!;
   const overflowDropdown = document.querySelector('.overflow-dropdown')!;
