@@ -90,7 +90,6 @@ export function computeLoopHierarchy(faces: { loop: HE[]; area2: number }[]): Lo
   for (let i = 0; i < nodes.length; i++) {
     const v = nodes[i];
     let parent: LoopNode | null = null;
-    for (let j = i - 1; j >= 0; j--) {
       if (contains(nodes[j], v)) {
         parent = nodes[j];
         break;
