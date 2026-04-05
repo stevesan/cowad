@@ -18,7 +18,7 @@ describe('splitAndExtend', () => {
     await drawClick(-208, 240);
     await drawClick(272, 360);
     await drawClick(128, -72);
-    dumpMapJSON('splitandextend');
+    dumpMapJSON('splitAndExtend');
     expect(maps.sectors.size).toBe(3);
     expectMapIsValid();
   });

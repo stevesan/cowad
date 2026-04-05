@@ -20,7 +20,7 @@ describe('splitDonut', () => {
     await drawClick(0, 256);
     await drawClick(192, 192);
     await drawClick(256, 256);
-    dumpMapJSON('splitdonut');
+    dumpMapJSON('splitDonut');
     expect(maps.sectors.size).toBe(3);
     expectMapIsValid();
   });

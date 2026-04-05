@@ -15,7 +15,7 @@ describe('islandInheritsWaterProps', () => {
     await drawClick(64, 112);
     await drawClick(-32, 16);
     await drawComplete();
-    dumpMapJSON('islandinheritswaterprops');
+    dumpMapJSON('islandInheritsWaterProps');
 
     for (const [sid, sector] of maps.sectors) {
       expect(sector.floorTex, `sector ${sid} should have floorTex NUKAGE1`).toBe('NUKAGE1');

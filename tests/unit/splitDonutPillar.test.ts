@@ -24,7 +24,7 @@ describe('splitDonutPillar', () => {
 
     await drawClick(64, 192);
     await drawClick(0, 256);
-    dumpMapJSON('splitdonutpillar');
+    dumpMapJSON('splitDonutPillar');
     expect(maps.sectors.size).toBe(1);
     expectMapIsValid();
   });

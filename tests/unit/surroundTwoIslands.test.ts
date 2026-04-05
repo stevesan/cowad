@@ -25,7 +25,7 @@ describe('surroundTwoIslands', () => {
     await drawClick(224, -48);
     await drawClick(-144, -96);
     await drawComplete();
-    dumpMapJSON('surroundtwoislands');
+    dumpMapJSON('surroundTwoIslands');
     expect(maps.sectors.size).toBe(4);
     expectMapIsValid();
   });

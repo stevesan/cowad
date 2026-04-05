@@ -13,7 +13,7 @@ describe('simpleExtend', () => {
     await drawClick(-256, 184);
     await drawClick(-16, 64);
     await drawClick(-240, -168);
-    dumpMapJSON('simpleextend');
+    dumpMapJSON('simpleExtend');
     expectMapIsValid();
   });
 });
