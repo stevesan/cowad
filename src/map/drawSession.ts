@@ -312,14 +312,42 @@ export function fixSectors(newLds: Set<string>): void {
 
     const ld = maps.linedefs.get(he.ldId)!;
     const isFront = (he.fromVid === ld.v1);
-    const sdVal = { sector: null, xoff: 0, yoff: 0, upper: '-', mid: '-', lower: '-' };
+    const oppSdId = isFront ? ld.backSide : ld.frontSide;
+    const becomesTwoSided = !!oppSdId;
+
+    const sdVal = {
+      sector: null, xoff: 0, yoff: 0,
+      upper: becomesTwoSided ? 'STARTAN2' : '-',
+      mid: becomesTwoSided ? '-' : 'STARTAN2',
+      lower: becomesTwoSided ? 'STARTAN2' : '-',
+    };
     const sdRef = mapRef('sidedefs').push(sdVal);
     record(`map/sidedefs/${sdRef.key}`, null, sdVal);
 
     const ldBefore = { ...ld };
     const field = isFront ? 'frontSide' : 'backSide';
-    record(`map/linedefs/${he.ldId}`, ldBefore, { ...ldBefore, [field]: sdRef.key });
-    mapRef('linedefs').child(he.ldId).update({ [field]: sdRef.key });
+    const ldUpdates: Record<string, any> = { [field]: sdRef.key };
+
+    if (becomesTwoSided) {
+      // Set two-sided flag, clear impassable
+      ldUpdates.flags = (ldBefore.flags | 4) & ~1;
+
+      // Update opposite sidedef: ensure upper/lower, clear mid
+      const oppSd = maps.sidedefs.get(oppSdId!);
+      if (oppSd) {
+        const oppUpd: Record<string, string> = {};
+        if (!oppSd.upper || oppSd.upper === '-') oppUpd.upper = 'STARTAN2';
+        if (!oppSd.lower || oppSd.lower === '-') oppUpd.lower = 'STARTAN2';
+        if (oppSd.mid && oppSd.mid !== '-') oppUpd.mid = '-';
+        if (Object.keys(oppUpd).length) {
+          record(`map/sidedefs/${oppSdId}`, { ...oppSd }, { ...oppSd, ...oppUpd });
+          mapRef('sidedefs').child(oppSdId!).update(oppUpd);
+        }
+      }
+    }
+
+    record(`map/linedefs/${he.ldId}`, ldBefore, { ...ldBefore, ...ldUpdates });
+    mapRef('linedefs').child(he.ldId).update(ldUpdates);
     return sdRef.key;
   }
 
