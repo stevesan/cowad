@@ -168,6 +168,28 @@ function fireListeners(fullPath: string, segments: string[], oldVal: any, newVal
       }
     }
   }
+
+  // When an object is replaced with another object, fire child-level events on
+  // fullPath itself (mirrors real Firebase behavior for collection-level writes)
+  const oldIsObj = oldVal != null && typeof oldVal === 'object';
+  const newIsObj = newVal != null && typeof newVal === 'object';
+  if (newIsObj) {
+    const oldKeys = oldIsObj ? new Set(Object.keys(oldVal)) : new Set<string>();
+    for (const [k, v] of Object.entries(newVal)) {
+      if (!oldKeys.has(k)) {
+        for (const cb of getListeners(fullPath, 'child_added')) cb(new LocalSnapshot(k, v));
+      } else if (JSON.stringify(oldVal[k]) !== JSON.stringify(v)) {
+        for (const cb of getListeners(fullPath, 'child_changed')) cb(new LocalSnapshot(k, v));
+      }
+    }
+    if (oldIsObj) {
+      for (const k of Object.keys(oldVal)) {
+        if (!(k in newVal)) {
+          for (const cb of getListeners(fullPath, 'child_removed')) cb(new LocalSnapshot(k, oldVal[k]));
+        }
+      }
+    }
+  }
 }
 
 // Start counter high enough to avoid collisions with keys persisted from prior sessions
