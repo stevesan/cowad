@@ -300,12 +300,18 @@ export function fixSectors(newLds: Set<string>): void {
   }
 
   // ---- Helpers ----
-  function ensureSidedef(he: HE): string {
+  function getExistingSd(he: HE): string | null {
     const ld = maps.linedefs.get(he.ldId)!;
     const isFront = (he.fromVid === ld.v1);
-    const existing = isFront ? ld.frontSide : ld.backSide;
+    return (isFront ? ld.frontSide : ld.backSide) ?? null;
+  }
+
+  function ensureSidedef(he: HE): string {
+    const existing = getExistingSd(he);
     if (existing) return existing;
 
+    const ld = maps.linedefs.get(he.ldId)!;
+    const isFront = (he.fromVid === ld.v1);
     const sdVal = { sector: null, xoff: 0, yoff: 0, upper: '-', mid: '-', lower: '-' };
     const sdRef = mapRef('sidedefs').push(sdVal);
     record(`map/sidedefs/${sdRef.key}`, null, sdVal);
@@ -326,21 +332,54 @@ export function fixSectors(newLds: Set<string>): void {
     }
   }
 
+  // ---- Full PFT from ALL linedefs + hierarchy (needed before the main loop) ----
+  const allVisited = new Set<string>();
+  const allFaces: { loop: HE[]; area2: number }[] = [];
+  for (const [ldId, ld] of maps.linedefs) {
+    for (const start of [
+      { fromVid: ld.v1, toVid: ld.v2, ldId } as HE,
+      { fromVid: ld.v2, toVid: ld.v1, ldId } as HE
+    ]) {
+      if (allVisited.has(heKey(start))) continue;
+      const loop = traceFace(start);
+      for (const he of loop) allVisited.add(heKey(he));
+      const poly = loop.map(he => maps.vertices.get(he.fromVid)!);
+      allFaces.push({ loop, area2: signedArea2(poly) });
+    }
+  }
+
+  const hierarchy = computeLoopHierarchy(allFaces);
+
+  function faceKey(loop: HE[]): string {
+    return loop.map(heKey).sort().join('|');
+  }
+  const nodeByKey = new Map<string, LoopNode>();
+  const parentOf = new Map<LoopNode, LoopNode | null>();
+  function indexHierarchy(nodes: LoopNode[], parent: LoopNode | null) {
+    for (const n of nodes) {
+      nodeByKey.set(faceKey(n.loop), n);
+      parentOf.set(n, parent);
+      indexHierarchy(n.children, n);
+    }
+  }
+  indexHierarchy(hierarchy, null);
+
   // ---- Process each new face ----
   const usedSectors = new Set<string>();
+  const newFaceKeys = new Set(newFaces.map(f => faceKey(f.loop)));
   const processed: { face: { loop: HE[]; area2: number }; sectorId: string; isNewOrCloned: boolean }[] = [];
 
   for (const face of newFaces) {
     const isInward = face.area2 > 0;
-    // TODO: you shouldn't create these sidedefs until you know you need them.
-    const sdIds = face.loop.map(ensureSidedef);
 
-    // Resolve sector from own sidedefs
-    // TODO: you can do this check without actually creating all SDs.
+    // Check existing sidedefs for a sector (without creating new ones)
     let sectorU: string | null = null;
-    for (const sdId of sdIds) {
-      const sd = maps.sidedefs.get(sdId);
-      if (sd?.sector) { sectorU = sd.sector; break; }
+    for (const he of face.loop) {
+      const sdId = getExistingSd(he);
+      if (sdId) {
+        const sd = maps.sidedefs.get(sdId);
+        if (sd?.sector) { sectorU = sd.sector; break; }
+      }
     }
 
     let assignId: string;
@@ -375,54 +414,37 @@ export function fixSectors(newLds: Set<string>): void {
       }
       isNewOrCloned = true;
     } else {
-      // Outward loop, all SDs clear: ignore — facing nothing
-      // TODO: actually what you need to do is also look for a sector that immediately contains this - and use that. so you need the full-map hierarchy before this pass. instead of doing it in 2 phases, just create the hierarchy beforehand and do this all in the same loop.
-      continue;
+      // Outward, all SDs clear: find containing sector via hierarchy parent
+      const node = nodeByKey.get(faceKey(face.loop));
+      if (!node) continue;
+      const parent = parentOf.get(node);
+      if (!parent) continue;
+      // Find sector from parent's existing sidedefs
+      let parentSector: string | null = null;
+      for (const he of parent.loop) {
+        const sdId = getExistingSd(he);
+        if (sdId) {
+          const sd = maps.sidedefs.get(sdId);
+          if (sd?.sector) { parentSector = sd.sector; break; }
+        }
+      }
+      if (!parentSector) continue;
+      if (!usedSectors.has(parentSector)) {
+        assignId = parentSector;
+      } else {
+        assignId = cloneSector(parentSector);
+        isNewOrCloned = true;
+      }
     }
 
+    // Create sidedefs only now that we know the sector
+    const sdIds = face.loop.map(ensureSidedef);
     usedSectors.add(assignId);
     for (const sdId of sdIds) assignSdToSector(sdId, assignId);
     processed.push({ face, sectorId: assignId, isNewOrCloned });
   }
 
   // ---- For new/cloned sectors, find related existing loops via hierarchy ----
-  if (!processed.some(p => p.isNewOrCloned)) return;
-
-  // Full PFT from ALL linedefs to enumerate every face in the map
-  const allVisited = new Set<string>();
-  const allFaces: { loop: HE[]; area2: number }[] = [];
-  for (const [ldId, ld] of maps.linedefs) {
-    for (const start of [
-      { fromVid: ld.v1, toVid: ld.v2, ldId } as HE,
-      { fromVid: ld.v2, toVid: ld.v1, ldId } as HE
-    ]) {
-      if (allVisited.has(heKey(start))) continue;
-      const loop = traceFace(start);
-      for (const he of loop) allVisited.add(heKey(he));
-      const poly = loop.map(he => maps.vertices.get(he.fromVid)!);
-      allFaces.push({ loop, area2: signedArea2(poly) });
-    }
-  }
-
-  // Build hierarchy and lookup maps
-  const hierarchy = computeLoopHierarchy(allFaces);
-
-  function faceKey(loop: HE[]): string {
-    return loop.map(heKey).sort().join('|');
-  }
-  const nodeByKey = new Map<string, LoopNode>();
-  const parentOf = new Map<LoopNode, LoopNode | null>();
-  function indexHierarchy(nodes: LoopNode[], parent: LoopNode | null) {
-    for (const n of nodes) {
-      nodeByKey.set(faceKey(n.loop), n);
-      parentOf.set(n, parent);
-      indexHierarchy(n.children, n);
-    }
-  }
-  indexHierarchy(hierarchy, null);
-
-  const newFaceKeys = new Set(newFaces.map(f => faceKey(f.loop)));
-
   for (const { face, sectorId, isNewOrCloned } of processed) {
     if (!isNewOrCloned) continue;
 
