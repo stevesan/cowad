@@ -464,6 +464,8 @@ export function fixSectors(newLds: Set<string>): void {
       if (parent && !newFaceKeys.has(faceKey(parent.loop))) {
         const parentSdIds = parent.loop.map(ensureSidedef);
         for (const sdId of parentSdIds) assignSdToSector(sdId, sectorId);
+
+        // TODO if any sidedefs were changed in this case, then we also need to push this loop into the processed queue, so any other loops immediately contained can be updated with the new sector.
       }
     }
   }
