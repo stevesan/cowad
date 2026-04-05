@@ -445,7 +445,9 @@ export function fixSectors(newLds: Set<string>): void {
   }
 
   // ---- For new/cloned sectors, find related existing loops via hierarchy ----
-  for (const { face, sectorId, isNewOrCloned } of processed) {
+  let qi = 0;
+  while (qi < processed.length) {
+    const { face, sectorId, isNewOrCloned } = processed[qi++];
     if (!isNewOrCloned) continue;
 
     const node = nodeByKey.get(faceKey(face.loop));
@@ -462,10 +464,19 @@ export function fixSectors(newLds: Set<string>): void {
       // Outward: find existing loop that immediately contains this hole
       const parent = parentOf.get(node);
       if (parent && !newFaceKeys.has(faceKey(parent.loop))) {
+        let parentChanged = false;
         const parentSdIds = parent.loop.map(ensureSidedef);
-        for (const sdId of parentSdIds) assignSdToSector(sdId, sectorId);
-
-        // TODO if any sidedefs were changed in this case, then we also need to push this loop into the processed queue, so any other loops immediately contained can be updated with the new sector.
+        for (const sdId of parentSdIds) {
+          const sd = maps.sidedefs.get(sdId);
+          if (!sd || sd.sector !== sectorId) parentChanged = true;
+          assignSdToSector(sdId, sectorId);
+        }
+        // If the parent's sidedefs changed sector, its other children (existing
+        // hole loops) also need updating — enqueue as inward so the branch above
+        // handles them on a subsequent iteration.
+        if (parentChanged) {
+          processed.push({ face: { loop: parent.loop, area2: parent.area2 }, sectorId, isNewOrCloned: true });
+        }
       }
     }
   }
