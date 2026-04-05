@@ -422,34 +422,31 @@ export function buildThings(group: THREE.Group): void {
         spriteBottom = Math.max(rawBottom, floorH);
         visibleH = spriteTop - spriteBottom;
       } else {
-        // Floor-standing: sprite top at floor + topOffset
-        spriteTop = floorH + sprite.topOffset;
-        const rawBottom = spriteTop - h;
-        spriteBottom = Math.max(rawBottom, floorH) + 0.1;
-        visibleH = spriteTop - spriteBottom;
+        // Floor-standing: bottom of sprite sits on the floor
+        spriteBottom = floorH;
+        spriteTop = floorH + h;
+        visibleH = h;
       }
       if (visibleH <= 0) return;
 
       const geo = new THREE.PlaneGeometry(w, visibleH);
 
-      // Crop texture if sprite is clipped
-      const fullH = h;
-      const clippedBottom = isCeiling ? Math.max(0, (spriteTop - h) - floorH) : 0;
-      const rawBottom = spriteTop - h;
-      if (!isCeiling && rawBottom < floorH) {
-        const cropFrac = (floorH - rawBottom) / fullH;
+      // Crop texture if sprite is clipped by floor/ceiling
+      if (visibleH < h) {
+        const cropFrac = (h - visibleH) / h;
         const uvAttr = geo.getAttribute('uv') as THREE.BufferAttribute;
-        for (let i = 0; i < uvAttr.count; i++) {
-          const v = uvAttr.getY(i);
-          uvAttr.setY(i, cropFrac + v * (1 - cropFrac));
-        }
-      } else if (isCeiling && clippedBottom < 0) {
-        // Sprite extends below floor — crop bottom
-        const cropFrac = (-clippedBottom) / fullH;
-        const uvAttr = geo.getAttribute('uv') as THREE.BufferAttribute;
-        for (let i = 0; i < uvAttr.count; i++) {
-          const v = uvAttr.getY(i);
-          uvAttr.setY(i, cropFrac + v * (1 - cropFrac));
+        if (isCeiling) {
+          // Crop top of texture (sprite hangs from ceiling, bottom clipped by floor)
+          for (let i = 0; i < uvAttr.count; i++) {
+            const v = uvAttr.getY(i);
+            uvAttr.setY(i, v * (1 - cropFrac));
+          }
+        } else {
+          // Crop bottom of texture (sprite stands on floor, bottom clipped)
+          for (let i = 0; i < uvAttr.count; i++) {
+            const v = uvAttr.getY(i);
+            uvAttr.setY(i, cropFrac + v * (1 - cropFrac));
+          }
         }
       }
 
