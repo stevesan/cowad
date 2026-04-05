@@ -157,6 +157,53 @@ function assignFaceSector(face: HE[], sideIds: string[], usedSectors: Set<string
   }
 }
 
+export type LoopNode = { loop: HE[]; area2: number; children: LoopNode[] };
+
+export function computeLoopHierarchy(faces: { loop: HE[]; area2: number }[]): LoopNode[] {
+  const nodes: LoopNode[] = faces.map(f => ({ loop: f.loop, area2: f.area2, children: [] }));
+
+  // Sort by absolute area descending (largest first).
+  nodes.sort((a, b) => Math.abs(b.area2) - Math.abs(a.area2));
+
+  // Check if loop U geometrically contains loop V.
+  function contains(u: LoopNode, v: LoopNode): boolean {
+    // If two loops share edges, one is outward and one is inward.
+    // The outward (hole) loop contains the inward (boundary) loop.
+    const uEdges = new Set(u.loop.map(he => he.ldId));
+    for (const he of v.loop) {
+      if (uEdges.has(he.ldId)) {
+        return u.area2 < 0 && v.area2 > 0;
+      }
+    }
+    // No shared edges: point-in-polygon test.
+    const testPt = maps.vertices.get(v.loop[0].fromVid)!;
+    const uPoly = u.loop.map(he => maps.vertices.get(he.fromVid)!);
+    return pointInPoly(testPt.x, testPt.y, uPoly);
+  }
+
+  // For each node, find its immediate parent: the smallest loop that contains it.
+  // Since nodes are sorted largest-first, iterating j from i-1 down to 0
+  // checks from smallest candidate to largest — the first hit is the tightest container.
+  const roots: LoopNode[] = [];
+  for (let i = 0; i < nodes.length; i++) {
+    const v = nodes[i];
+    let parent: LoopNode | null = null;
+    for (let j = i - 1; j >= 0; j--) {
+      if (contains(nodes[j], v)) {
+        parent = nodes[j];
+        break;
+      }
+    }
+    if (parent) {
+      parent.children.push(v);
+    } else {
+      roots.push(v);
+    }
+  }
+
+  return roots;
+}
+
 async function applyDrawChain(isLoop: boolean): Promise<void> {
   const n = drawChain.length;
   if (n < 2) return;
