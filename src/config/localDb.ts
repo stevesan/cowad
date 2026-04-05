@@ -146,6 +146,28 @@ function fireListeners(fullPath: string, segments: string[], oldVal: any, newVal
       cb(new LocalSnapshot(segments[segments.length - 2] || '', parentVal ?? null));
     }
   }
+
+  // When a subtree is removed, cascade child_removed to all descendant listeners
+  // (mirrors real Firebase behavior where removing a parent fires child_removed on
+  // listeners registered on child paths)
+  if (newVal == null && oldVal && typeof oldVal === 'object') {
+    for (const [listenerPath, entries] of listeners) {
+      if (!listenerPath.startsWith(fullPath + '/')) continue;
+      const relSegs = listenerPath.slice(fullPath.length + 1).split('/');
+      let node: any = oldVal;
+      for (const seg of relSegs) {
+        if (node == null || typeof node !== 'object') { node = undefined; break; }
+        node = node[seg];
+      }
+      if (node == null || typeof node !== 'object') continue;
+      const removedCbs = entries.filter(e => e.event === 'child_removed').map(e => e.callback);
+      for (const cb of removedCbs) {
+        for (const [k, v] of Object.entries(node)) {
+          cb(new LocalSnapshot(k, v));
+        }
+      }
+    }
+  }
 }
 
 // Start counter high enough to avoid collisions with keys persisted from prior sessions
