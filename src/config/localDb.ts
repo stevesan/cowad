@@ -55,10 +55,17 @@ function loadFromIdb(): Promise<void> {
   }).catch(() => {}); // IndexedDB unavailable — run in-memory only
 }
 
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
+
 function persist(): void {
   if (!idb) return;
-  const tx = idb.transaction(IDB_STORE, 'readwrite');
-  tx.objectStore(IDB_STORE).put(structuredClone(store), IDB_KEY);
+  if (persistTimer) return;
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    if (!idb) return;
+    const tx = idb.transaction(IDB_STORE, 'readwrite');
+    tx.objectStore(IDB_STORE).put(structuredClone(store), IDB_KEY);
+  }, 100);
 }
 
 // Listeners keyed by path, then event type
