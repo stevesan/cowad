@@ -79,6 +79,7 @@ export interface ThingInfo {
   cat: string;
   radius: number;
   doom2Only?: boolean;
+  ceiling?: boolean;
 }
 
 export type GameType = 'doom1' | 'doom2';

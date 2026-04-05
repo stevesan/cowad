@@ -381,6 +381,16 @@ function thingFloorHeight(wx: number, wy: number): number {
   return floorH;
 }
 
+function thingCeilHeight(wx: number, wy: number): number {
+  let ceilH = 128;
+  maps.sectors.forEach((sec, sid) => {
+    if (pointInSector(wx, wy, sid)) {
+      ceilH = sec.ceiling ?? 128;
+    }
+  });
+  return ceilH;
+}
+
 export function buildThings(group: THREE.Group): void {
   const spriteTexCache = new Map<string, THREE.Texture>();
 
@@ -389,7 +399,9 @@ export function buildThings(group: THREE.Group): void {
     const cat = info?.cat || 'player';
     const radius = info?.radius || 16;
     const color = CAT_COLOR[cat] || '#fff';
+    const isCeiling = info?.ceiling ?? false;
     const floorH = thingFloorHeight(thing.x, thing.y);
+    const ceilH = isCeiling ? thingCeilHeight(thing.x, thing.y) : 0;
 
     // Try sprite
     const spritePrefix = THING_SPRITE[thing.type];
@@ -400,19 +412,40 @@ export function buildThings(group: THREE.Group): void {
     if (sprite) {
       const w = sprite.width;
       const h = sprite.height;
-      const spriteTop = floorH + sprite.topOffset;
-      const rawBottom = spriteTop - h;
-      // Clamp bottom to floor (DOOM clips sprites at floor level)
-      // Add small offset to prevent Z-fighting with the floor mesh
-      const spriteBottom = Math.max(rawBottom, floorH) + 0.1;
-      const visibleH = spriteTop - spriteBottom;
+
+      let spriteTop: number, spriteBottom: number, visibleH: number;
+
+      if (isCeiling) {
+        // Ceiling-hung: sprite top anchored at ceiling
+        spriteTop = ceilH - 0.1;
+        const rawBottom = spriteTop - h;
+        spriteBottom = Math.max(rawBottom, floorH);
+        visibleH = spriteTop - spriteBottom;
+      } else {
+        // Floor-standing: sprite top at floor + topOffset
+        spriteTop = floorH + sprite.topOffset;
+        const rawBottom = spriteTop - h;
+        spriteBottom = Math.max(rawBottom, floorH) + 0.1;
+        visibleH = spriteTop - spriteBottom;
+      }
       if (visibleH <= 0) return;
 
       const geo = new THREE.PlaneGeometry(w, visibleH);
 
-      // Crop bottom of texture if sprite extends below floor
-      if (rawBottom < floorH) {
-        const cropFrac = (floorH - rawBottom) / h;
+      // Crop texture if sprite is clipped
+      const fullH = h;
+      const clippedBottom = isCeiling ? Math.max(0, (spriteTop - h) - floorH) : 0;
+      const rawBottom = spriteTop - h;
+      if (!isCeiling && rawBottom < floorH) {
+        const cropFrac = (floorH - rawBottom) / fullH;
+        const uvAttr = geo.getAttribute('uv') as THREE.BufferAttribute;
+        for (let i = 0; i < uvAttr.count; i++) {
+          const v = uvAttr.getY(i);
+          uvAttr.setY(i, cropFrac + v * (1 - cropFrac));
+        }
+      } else if (isCeiling && clippedBottom < 0) {
+        // Sprite extends below floor — crop bottom
+        const cropFrac = (-clippedBottom) / fullH;
         const uvAttr = geo.getAttribute('uv') as THREE.BufferAttribute;
         for (let i = 0; i < uvAttr.count; i++) {
           const v = uvAttr.getY(i);
@@ -454,7 +487,11 @@ export function buildThings(group: THREE.Group): void {
         opacity: 0.8,
       });
       mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(thing.x, floorH + h / 2, -thing.y);
+      if (isCeiling) {
+        mesh.position.set(thing.x, ceilH - h / 2, -thing.y);
+      } else {
+        mesh.position.set(thing.x, floorH + h / 2, -thing.y);
+      }
     }
 
     mesh.userData = { entityType: 'thing', entityId: tid, billboard: true };
