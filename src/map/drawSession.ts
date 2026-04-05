@@ -506,4 +506,14 @@ export function fixSectors(newLds: Set<string>): void {
       }
     }
   }
+
+  // Flip single-sided linedefs that only have a backSide so they have a frontSide
+  for (const [ldId, ld] of maps.linedefs) {
+    if (!ld.frontSide && ld.backSide) {
+      const ldBefore = { ...ld };
+      const ldUpdates = { frontSide: ld.backSide, backSide: null, v1: ld.v2, v2: ld.v1 };
+      record(`map/linedefs/${ldId}`, ldBefore, { ...ldBefore, ...ldUpdates });
+      mapRef('linedefs').child(ldId).update(ldUpdates);
+    }
+  }
 }

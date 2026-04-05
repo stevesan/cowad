@@ -119,6 +119,12 @@ export function expectMapIsValid(): void {
     if (ld.v1 === ld.v2) errors.push(`linedef ${lid}: zero-length (v1 === v2 === ${ld.v1})`);
   }
 
+  // ── Back-side-only linedefs ──
+
+  for (const [lid, ld] of maps.linedefs) {
+    if (!ld.frontSide && ld.backSide) errors.push(`linedef ${lid}: has backSide but no frontSide`);
+  }
+
   // ── Duplicate linedefs ──
 
   const ldPairs = new Map<string, string>();
