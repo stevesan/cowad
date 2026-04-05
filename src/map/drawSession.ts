@@ -167,6 +167,10 @@ export function computeLoopHierarchy(faces: { loop: HE[]; area2: number }[]): Lo
 
   // Check if loop U geometrically contains loop V.
   function contains(u: LoopNode, v: LoopNode): boolean {
+    // Ignore loops of the same sign. U may contain V, but it will never
+    // be *immediate*. It will be via some other loop with the opposite sign.
+    if(u.area2 < 0 === v.area2 < 0) return false;
+
     // If two loops share edges, one is outward and one is inward.
     // The outward (hole) loop contains the inward (boundary) loop.
     const uEdges = new Set(u.loop.map(he => he.ldId));
@@ -239,22 +243,8 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
       activeLines.push(ref.key);
     }
   }
-
-  // Collect activeLines + all linedefs of the containing sector (if any).
-  // TODO also add any outer sides of sectors fully contained by our lines...
-  const relevantLds = new Set(activeLines);
-  let containingSector: string | null = null;
-  for (const [sid] of maps.sectors) {
-    // TODO need to find the *smallest* containing sector, and add its sidedefs.
-    // TODO instead of using the first vert in the chain, use the mid point of the first line we *created*
-    if (pointInSector(drawChain[0].x, drawChain[0].y, sid)) { containingSector = sid; break; }
-  }
-  if (containingSector) {
-    for (const ldId of getLinedefsForSector(containingSector)) {
-      relevantLds.add(ldId);
-    }
-  }
-  fixSectors(relevantLds);
+  
+  fixSectors(new Set(activeLines));
   
   endAction();
   drawReset();
