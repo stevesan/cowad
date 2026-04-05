@@ -294,6 +294,12 @@ export function exportWAD(): void {
 const LAUNCHER_URL = 'http://127.0.0.1:3666';
 
 export async function launchWAD(spawnX?: number, spawnY?: number): Promise<void> {
+  const hasPlayerStart = [...maps.things.values()].some(t => t.type === 1);
+  if (!hasPlayerStart) {
+    showToast('No Player 1 Start on the map — place one before playing');
+    return;
+  }
+
   const result = buildWAD();
   if (!result) return;
   const { wad, msg } = result;
