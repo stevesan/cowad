@@ -105,4 +105,16 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
     setSelected(null);
     renderPanel();
   });
+
+  // Overflow menu toggle
+  const overflowToggle = document.querySelector('.overflow-toggle')!;
+  const overflowDropdown = document.querySelector('.overflow-dropdown')!;
+  overflowToggle.addEventListener('click', () => overflowDropdown.classList.toggle('open'));
+  document.addEventListener('click', (e) => {
+    if (!(e.target as Element).closest('.overflow-menu')) overflowDropdown.classList.remove('open');
+  });
+  // Close menu when any dropdown button is clicked
+  overflowDropdown.querySelectorAll('button').forEach(btn =>
+    btn.addEventListener('click', () => overflowDropdown.classList.remove('open'))
+  );
 }
