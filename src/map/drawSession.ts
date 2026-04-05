@@ -332,9 +332,11 @@ export function fixSectors(newLds: Set<string>): void {
 
   for (const face of newFaces) {
     const isInward = face.area2 > 0;
+    // TODO: you shouldn't create these sidedefs until you know you need them.
     const sdIds = face.loop.map(ensureSidedef);
 
     // Resolve sector from own sidedefs
+    // TODO: you can do this check without actually creating all SDs.
     let sectorU: string | null = null;
     for (const sdId of sdIds) {
       const sd = maps.sidedefs.get(sdId);
@@ -374,6 +376,7 @@ export function fixSectors(newLds: Set<string>): void {
       isNewOrCloned = true;
     } else {
       // Outward loop, all SDs clear: ignore — facing nothing
+      // TODO: actually what you need to do is also look for a sector that immediately contains this - and use that. so you need the full-map hierarchy before this pass. instead of doing it in 2 phases, just create the hierarchy beforehand and do this all in the same loop.
       continue;
     }
 
