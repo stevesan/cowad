@@ -26,8 +26,9 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
       if (!file) return;
       try {
         showToast('Importing WAD...');
-        const { flats, walls } = await importWad(file);
-        showToast(`Loaded ${flats} flats + ${walls} wall textures`);
+        const { flats, walls, gameType } = await importWad(file);
+        const gameName = gameType === 'doom1' ? 'DOOM' : 'DOOM 2';
+        showToast(`${gameName}: loaded ${flats} flats + ${walls} wall textures`);
         renderPanel(); // refresh to show texture previews
       } catch (err: any) {
         showToast(`Import failed: ${err.message}`);

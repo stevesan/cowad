@@ -1,6 +1,8 @@
 import { parseWad, getLump, getLumpsBetween, type WadFile } from './wadReader';
 import { db } from '../config/firebase';
 import { THING_SPRITE } from '../config/constants';
+import { setGameType } from '../state/appState';
+import type { GameType } from '../types';
 
 export interface TextureEntry {
   name: string;
@@ -359,10 +361,25 @@ export function getTextureDataUrl(name: string): string | null {
 }
 export function isWadLoaded(): boolean { return textures.size > 0; }
 
-export async function importWad(file: File): Promise<{ flats: number; walls: number }> {
+function detectGameType(wad: WadFile): GameType {
+  const lumpNames = new Set(wad.lumps.map(l => l.name));
+  // DOOM 1 maps: E1M1..E4M9; DOOM 2 maps: MAP01..MAP32
+  for (const name of lumpNames) {
+    if (/^E\dM\d$/.test(name)) return 'doom1';
+    if (/^MAP\d\d$/.test(name)) return 'doom2';
+  }
+  // Fallback: check for DOOM 2-specific sprites
+  if (lumpNames.has('SGN2A0') || lumpNames.has('VILEA1')) return 'doom2';
+  return 'doom2'; // default
+}
+
+export async function importWad(file: File): Promise<{ flats: number; walls: number; gameType: GameType }> {
   const buffer = await file.arrayBuffer();
   const wad = parseWad(buffer);
   const palette = parsePalette(wad);
+
+  const detected = detectGameType(wad);
+  setGameType(detected);
 
   const flats = extractFlats(wad, palette);
   const walls = extractWallTextures(wad, palette);
@@ -375,8 +392,9 @@ export async function importWad(file: File): Promise<{ flats: number; walls: num
   // Persist to Firebase (replace any previous IWAD)
   await saveTexturesToDb();
   await saveSpritesToDb();
+  await db.ref('settings/gameType').set(detected);
 
-  return { flats: flats.length, walls: walls.length };
+  return { flats: flats.length, walls: walls.length, gameType: detected };
 }
 
 // ── Firebase persistence ──

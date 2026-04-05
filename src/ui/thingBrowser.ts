@@ -1,6 +1,7 @@
 import { THINGS, THING_SPRITE } from '../config/constants';
 import { CAT_COLOR } from '../config/ux';
 import { getSpritePrefixEntry } from '../wad/textureLoader';
+import { gameType } from '../state/appState';
 
 let selectedThingType = 1; // default Player 1 Start
 let searchQuery = '';
@@ -108,6 +109,7 @@ function renderGrid(): void {
   const entries: { id: number; name: string; cat: string }[] = [];
   for (const [idStr, info] of Object.entries(THINGS)) {
     const id = parseInt(idStr, 10);
+    if (info.doom2Only && gameType === 'doom1') continue;
     if (activeCategory !== 'all' && info.cat !== activeCategory) continue;
     if (query && !info.name.toLowerCase().includes(query)) continue;
     entries.push({ id, name: info.name, cat: info.cat });

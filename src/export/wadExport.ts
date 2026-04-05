@@ -1,4 +1,4 @@
-import { maps } from '../state/appState';
+import { maps, gameType } from '../state/appState';
 import { showToast } from '../ui/toast';
 import type { Linedef, Sidedef, Sector } from '../types';
 
@@ -229,8 +229,9 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   }
 
   // Assemble PWAD
+  const mapName = gameType === 'doom1' ? 'E1M1' : 'MAP01';
   const lumps = [
-    { name: 'MAP01',    buf: new ArrayBuffer(0) },
+    { name: mapName,    buf: new ArrayBuffer(0) },
     { name: 'THINGS',   buf: thingsBuf  },
     { name: 'LINEDEFS', buf: linesBuf   },
     { name: 'SIDEDEFS', buf: sidesBuf   },
@@ -268,7 +269,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
 
   console.table(entries.map(e => ({ lump: e.name, offset: e.off, size: e.size })));
 
-  let msg = `MAP01: ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t`;
+  let msg = `${mapName}: ${nV}v ${nL}l ${nD}sd ${nS}s ${nT}t`;
   const skipped = skippedLd + skippedSd + skippedSec;
   if (skipped) msg += ` (${skipped} orphans skipped)`;
 

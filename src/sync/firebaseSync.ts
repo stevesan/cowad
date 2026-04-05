@@ -1,5 +1,5 @@
 import { db, mapRef } from '../config/firebase';
-import { uid, maps, selected, setSelected, setSnapSize, triggerDraw, triggerRenderPanel } from '../state/appState';
+import { uid, maps, selected, setSelected, setSnapSize, setGameType, triggerDraw, triggerRenderPanel } from '../state/appState';
 import { onLinedefAdded, onLinedefChanged, onLinedefRemoved, onSidedefAdded, onSidedefChanged, onSidedefRemoved } from '../state/indices';
 import { loadTexturesFromDb } from '../wad/textureLoader';
 import { updateToolbarButton } from '../ui/thingBrowser';
@@ -65,6 +65,11 @@ export function initSync(): void {
       const sel = document.getElementById('snap-size-sel') as HTMLSelectElement | null;
       if (sel) sel.value = String(val);
     }
+  });
+
+  db.ref('settings/gameType').on('value', (s: FirebaseSnapshot) => {
+    const val = s.val();
+    if (val === 'doom1' || val === 'doom2') setGameType(val);
   });
 
   // Load persisted IWAD textures

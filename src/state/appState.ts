@@ -1,4 +1,4 @@
-import type { MapData, ToolType, Selection, DragState, Point } from '../types';
+import type { MapData, ToolType, Selection, DragState, Point, GameType } from '../types';
 
 export const uid: string = Math.random().toString(36).slice(2, 10);
 
@@ -27,6 +27,7 @@ export let boxSelectStart: Point | null = null;
 export let snapSize: number = 8;
 export let activeSide: 'front' | 'back' | null = null;
 export let multiSelectedSides: Map<string, string> = new Map(); // linedef ID → sidedef ID
+export let gameType: GameType = 'doom2';
 
 export function setTool(t: ToolType): void      { tool = t; }
 export function setSelected(s: Selection | null): void { selected = s; }
@@ -43,6 +44,7 @@ export function setMultiSelectedSides(m: Map<string, string>): void { multiSelec
 export function setBoxSelectStart(p: Point | null): void { boxSelectStart = p; }
 export function setSnapSize(v: number): void { snapSize = v; }
 export function setActiveSide(s: 'front' | 'back' | null): void { activeSide = s; }
+export function setGameType(g: GameType): void { gameType = g; }
 
 let _draw = (): void => {};
 let _renderPanel = (): void => {};
