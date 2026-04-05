@@ -1,10 +1,10 @@
-import { maps, pan, selected, hovered, tool, mouseWorld, zoom, setZoom, drawPoints, multiSelected, multiSelectType, boxSelectStart } from '../state/appState';
+import { maps, pan, selected, hovered, tool, mouseWorld, zoom, setZoom, drawPoints, multiSelected, multiSelectType, boxSelectStart, snapSize } from '../state/appState';
 import { THINGS, THING_SPRITE } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
 import { getSpritePrefixEntry, isWadLoaded } from '../wad/textureLoader';
 import { buildSectorPoly, buildSectorPolys } from '../geometry/cycleFinder';
 import { nearestVertex } from '../geometry/hitTest';
-import { VERTEX_PICK_PX, GRID, CAT_COLOR } from '../config/ux';
+import { VERTEX_PICK_PX, CAT_COLOR } from '../config/ux';
 
 let canvas: HTMLCanvasElement;
 let ctx: CanvasRenderingContext2D;
@@ -53,20 +53,24 @@ export function draw(): void {
 }
 
 function drawGrid(W: number, H: number): void {
+  const g = snapSize;
   const tl = s2w(0, 0), br = s2w(W, H);
-  const x0 = Math.floor(tl.x / GRID) * GRID;
-  const x1 = Math.ceil(br.x / GRID)  * GRID;
-  const y0 = Math.floor(br.y / GRID) * GRID;
-  const y1 = Math.ceil(tl.y / GRID)  * GRID;
-  ctx.strokeStyle = '#181818';
-  ctx.lineWidth = 1;
-  for (let x = x0; x <= x1; x += GRID) {
-    const sx = w2s(x, 0).x;
-    ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
-  }
-  for (let y = y0; y <= y1; y += GRID) {
-    const sy = w2s(0, y).y;
-    ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
+  const x0 = Math.floor(tl.x / g) * g;
+  const x1 = Math.ceil(br.x / g)  * g;
+  const y0 = Math.floor(br.y / g) * g;
+  const y1 = Math.ceil(tl.y / g)  * g;
+  // Skip drawing if grid lines would be too dense (< 4px apart)
+  if (g * zoom >= 4) {
+    ctx.strokeStyle = '#181818';
+    ctx.lineWidth = 1;
+    for (let x = x0; x <= x1; x += g) {
+      const sx = w2s(x, 0).x;
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, H); ctx.stroke();
+    }
+    for (let y = y0; y <= y1; y += g) {
+      const sy = w2s(0, y).y;
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(W, sy); ctx.stroke();
+    }
   }
   ctx.strokeStyle = '#252525';
   const o = w2s(0, 0);

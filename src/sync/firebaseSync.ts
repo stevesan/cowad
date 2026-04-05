@@ -64,6 +64,7 @@ export function initSync(): void {
       setSnapSize(val);
       const sel = document.getElementById('snap-size-sel') as HTMLSelectElement | null;
       if (sel) sel.value = String(val);
+      triggerDraw();
     }
   });
 
