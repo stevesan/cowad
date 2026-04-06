@@ -123,6 +123,8 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
       const val = { x: pt.x, y: pt.y };
       const ref = mapRef('vertices').push(val);
       record(`map/vertices/${ref.key}`, null, val);
+      // Ensure maps is populated even if sync listener hasn't fired yet
+      if (!maps.vertices.has(ref.key)) maps.vertices.set(ref.key, val as any);
       vertexIds.push(ref.key);
     }
   }
@@ -140,6 +142,8 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
       const ldVal = { v1: va, v2: vb, flags: 1 };
       const ref = mapRef('linedefs').push(ldVal);
       record(`map/linedefs/${ref.key}`, null, ldVal);
+      // Ensure maps is populated even if sync listener hasn't fired yet
+      if (!maps.linedefs.has(ref.key)) maps.linedefs.set(ref.key, ldVal as any);
       activeLines.push(ref.key);
     }
   }
@@ -284,7 +288,11 @@ export function fixSectors(newLds: Set<string>): void {
   const visited = new Set<string>();
   const newFaces: { loop: HE[]; area2: number }[] = [];
   for (const ldId of newLds) {
-    const ld = maps.linedefs.get(ldId)!;
+    const ld = maps.linedefs.get(ldId);
+    if (!ld) {
+      console.warn(`fixSectors: linedef ${ldId} not found in maps.linedefs (size=${maps.linedefs.size})`);
+      continue;
+    }
     for (const start of [
       { fromVid: ld.v1, toVid: ld.v2, ldId } as HE,
       { fromVid: ld.v2, toVid: ld.v1, ldId } as HE
