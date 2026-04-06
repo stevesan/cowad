@@ -8,3 +8,4 @@ dist/
 launcher/config.json
 launcher/temp_play.wad
 tests/unit/failures/
+.claude/
