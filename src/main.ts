@@ -17,8 +17,8 @@ initRenderer(canvas);
 
 function resize(): void {
   const wrap = document.getElementById('canvas-wrap')!;
-  canvas.width  = wrap.clientWidth;
-  canvas.height = wrap.clientHeight;
+  canvas.width  = canvas.clientWidth  || wrap.clientWidth;
+  canvas.height = canvas.clientHeight || wrap.clientHeight;
   draw();
 }
 window.addEventListener('resize', resize);

@@ -5,7 +5,7 @@ import { exportWAD, launchWAD } from '../export/wadExport';
 import { exportJSON, importJSON } from '../export/jsonExport';
 import { findSectorOverlaps } from '../map/overlapCheck';
 import { importWad } from '../wad/textureLoader';
-import { toggle3D, is3DActive } from '../3d/view3d';
+import { toggle3D, is3DActive, set3DSplit } from '../3d/view3d';
 import { isRecording, startRecording, stopRecording, generateTestCode, exportRecording } from '../testing/recorder';
 import { showToast } from './toast';
 import { renderPanel } from './propertiesPanel';
@@ -41,10 +41,26 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
     openThingBrowser(() => doSetTool('thing'));
   });
 
-  document.getElementById('view3d-btn')!.addEventListener('click', () => {
+  const view3dBtn = document.getElementById('view3d-btn')!;
+  view3dBtn.addEventListener('click', () => {
     toggle3D();
-    document.getElementById('view3d-btn')!.classList.toggle('active', is3DActive());
+    view3dBtn.classList.toggle('active', is3DActive());
+    localStorage.setItem('cowad-view-3d', String(is3DActive()));
   });
+
+  const splitChk = document.getElementById('split3d-chk') as HTMLInputElement;
+  splitChk.checked = localStorage.getItem('cowad-split-3d') === 'true';
+  set3DSplit(splitChk.checked);
+  splitChk.addEventListener('change', () => {
+    localStorage.setItem('cowad-split-3d', String(splitChk.checked));
+    set3DSplit(splitChk.checked);
+  });
+
+  // Restore saved 3D view state
+  if (localStorage.getItem('cowad-view-3d') === 'true') {
+    toggle3D();
+    view3dBtn.classList.toggle('active', is3DActive());
+  }
 
   const recordBtn = document.getElementById('record-btn')!;
   const recordModal = document.getElementById('record-modal')!;

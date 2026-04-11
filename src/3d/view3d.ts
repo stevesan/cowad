@@ -16,6 +16,7 @@ let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
 let container: HTMLDivElement | null = null;
 let isActive = false;
+let splitMode = false;
 let animFrameId = 0;
 let sceneGroup: THREE.Group;
 
@@ -26,6 +27,7 @@ const keys: Record<string, boolean> = {};
 const MOVE_SPEED = 300;
 const MOUSE_SENS = 0.002;
 let pointerLocked = false;
+let mouseOverCanvas = false;
 
 // ── Selection ──
 const raycaster = new THREE.Raycaster();
@@ -209,6 +211,9 @@ function ensureInit(): void {
     }
   });
 
+  renderer.domElement.addEventListener('mouseenter', () => { mouseOverCanvas = true; });
+  renderer.domElement.addEventListener('mouseleave', () => { mouseOverCanvas = false; });
+
   renderer.domElement.addEventListener('contextmenu', (e: Event) => e.preventDefault());
   renderer.domElement.addEventListener('mousedown', (e: MouseEvent) => {
     if (pointerLocked) {
@@ -234,10 +239,10 @@ function ensureInit(): void {
   });
 
   renderer.domElement.addEventListener('wheel', (e: WheelEvent) => {
-    if (!pointerLocked || !isActive) return;
+    if (!isActive) return;
+    if (!pointerLocked && !mouseOverCanvas) return;
     e.preventDefault();
-    mouse.set(0, 0);
-    raycaster.setFromCamera(mouse, camera);
+    raycaster.setFromCamera(pointerLocked ? mouse.set(0, 0) : unlockedMouse, camera);
     const hits = raycaster.intersectObjects(sceneGroup.children, false);
     if (hits.length === 0) return;
     const ud = hits[0].object.userData;
@@ -299,9 +304,42 @@ function resize(): void {
   if (!renderer || !container || !isActive) return;
   const w = container.clientWidth;
   const h = container.clientHeight;
+  if (w === 0 || h === 0) return;
   renderer.setSize(w, h);
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
+}
+
+function applyLayout(): void {
+  const wrap = document.getElementById('canvas-wrap')!;
+  const canvas2d = document.getElementById('canvas') as HTMLCanvasElement;
+  if (!isActive) {
+    container!.style.cssText = 'position:absolute;inset:0;display:none;z-index:10;cursor:crosshair;';
+    canvas2d.style.display = '';
+    canvas2d.style.flex = '';
+    canvas2d.style.minWidth = '';
+    canvas2d.style.width = '';
+    canvas2d.style.height = '';
+    wrap.style.display = '';
+    return;
+  }
+  if (splitMode) {
+    wrap.style.display = 'flex';
+    canvas2d.style.display = 'block';
+    canvas2d.style.flex = '1 1 0';
+    canvas2d.style.minWidth = '0';
+    canvas2d.style.width = 'auto';
+    canvas2d.style.height = '100%';
+    container!.style.cssText = 'position:relative;flex:1 1 0;min-width:0;height:100%;display:block;cursor:crosshair;border-left:1px solid #333;';
+  } else {
+    wrap.style.display = '';
+    canvas2d.style.display = 'none';
+    canvas2d.style.flex = '';
+    canvas2d.style.minWidth = '';
+    canvas2d.style.width = '';
+    canvas2d.style.height = '';
+    container!.style.cssText = 'position:absolute;inset:0;display:block;z-index:10;cursor:crosshair;';
+  }
 }
 
 // ── Scene building ──
@@ -370,12 +408,14 @@ function animate(time: number): void {
   const right = new THREE.Vector3(Math.cos(yaw), 0, Math.sin(yaw));
   const up = new THREE.Vector3(0, 1, 0);
 
-  if (keys['KeyW']) camera.position.addScaledVector(forward, speed);
-  if (keys['KeyS']) camera.position.addScaledVector(forward, -speed);
-  if (keys['KeyA']) camera.position.addScaledVector(right, -speed);
-  if (keys['KeyD']) camera.position.addScaledVector(right, speed);
-  if (keys['KeyQ']) camera.position.addScaledVector(up, speed);
-  if (keys['KeyE']) camera.position.addScaledVector(up, -speed);
+  if (pointerLocked) {
+    if (keys['KeyW']) camera.position.addScaledVector(forward, speed);
+    if (keys['KeyS']) camera.position.addScaledVector(forward, -speed);
+    if (keys['KeyA']) camera.position.addScaledVector(right, -speed);
+    if (keys['KeyD']) camera.position.addScaledVector(right, speed);
+    if (keys['KeyQ']) camera.position.addScaledVector(up, speed);
+    if (keys['KeyE']) camera.position.addScaledVector(up, -speed);
+  }
 
   // Apply camera rotation
   const lookTarget = camera.position.clone().add(forward);
@@ -389,9 +429,15 @@ function animate(time: number): void {
     highlightedOrigColor = null;
   }
 
-  // Raycast from crosshair (locked) or cursor (unlocked)
-  raycaster.setFromCamera(pointerLocked ? mouse.set(0, 0) : unlockedMouse, camera);
-  const hits = raycaster.intersectObjects(sceneGroup.children, false);
+  // Raycast from crosshair (locked) or cursor (unlocked, only when hovering the 3D canvas)
+  const hits: THREE.Intersection[] = [];
+  if (pointerLocked) {
+    raycaster.setFromCamera(mouse.set(0, 0), camera);
+    hits.push(...raycaster.intersectObjects(sceneGroup.children, false));
+  } else if (mouseOverCanvas) {
+    raycaster.setFromCamera(unlockedMouse, camera);
+    hits.push(...raycaster.intersectObjects(sceneGroup.children, false));
+  }
 
   // Update selection when pointer-locked
   if (pointerLocked) {
@@ -449,21 +495,25 @@ export function toggle3D(): void {
   ensureInit();
 
   isActive = !isActive;
-  const canvas2d = document.getElementById('canvas') as HTMLCanvasElement;
 
   if (isActive) {
-    container!.style.display = '';
-    canvas2d.style.display = 'none';
+    applyLayout();
+    // Trigger 2D canvas resize in split mode (flex layout changed its size)
+    window.dispatchEvent(new Event('resize'));
     resize();
     rebuildScene();
     positionCamera();
     lastTime = performance.now();
     animFrameId = requestAnimationFrame(animate);
-    renderer!.domElement.requestPointerLock();
-    showToast('Left-click exit look | Right-click enter look | WASD move | Shift+click multi-select | Tab exit');
+    if (!splitMode) {
+      renderer!.domElement.requestPointerLock();
+      showToast('Left-click exit look | Right-click enter look | WASD move | Shift+click multi-select | Tab exit');
+    } else {
+      showToast('Split view: right-click 3D pane for FPS look | WASD move');
+    }
   } else {
-    container!.style.display = 'none';
-    canvas2d.style.display = '';
+    applyLayout();
+    window.dispatchEvent(new Event('resize'));
     cancelAnimationFrame(animFrameId);
     // Exit pointer lock
     if (pointerLocked) document.exitPointerLock();
@@ -472,6 +522,20 @@ export function toggle3D(): void {
     draw();
   }
 }
+
+export function set3DSplit(v: boolean): void {
+  if (splitMode === v) return;
+  splitMode = v;
+  if (!isActive) return;
+  // Re-apply layout; exit pointer lock when switching to split
+  if (splitMode && pointerLocked) document.exitPointerLock();
+  applyLayout();
+  window.dispatchEvent(new Event('resize'));
+  resize();
+  draw();
+}
+
+export function is3DSplit(): boolean { return splitMode; }
 
 export function is3DActive(): boolean { return isActive; }
 export function get3DCameraPos(): { x: number; y: number } | null {
