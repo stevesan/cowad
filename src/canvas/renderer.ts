@@ -16,6 +16,13 @@ export function initRenderer(c: HTMLCanvasElement): void {
 
 export function getCanvas(): HTMLCanvasElement { return canvas; }
 
+// Center the 2D view on a world-space point (keeps current zoom).
+export function centerOn(wx: number, wy: number): void {
+  if (!canvas) return;
+  pan.x = canvas.width / 2 - wx * zoom;
+  pan.y = canvas.height / 2 + wy * zoom;
+}
+
 // Preserve the world-space point at the canvas center across a resize.
 // Call before the canvas dimensions change; it returns a finalize() to run after.
 export function preserveCenter(): () => void {

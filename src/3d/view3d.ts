@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide, snapSize, multiSelected, multiSelectType, setMultiSelected, multiSelectedSides, setMultiSelectedSides, tool } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { renderPanel } from '../ui/propertiesPanel';
-import { draw, preserveCenter } from '../canvas/renderer';
+import { draw, preserveCenter, centerOn } from '../canvas/renderer';
 import { showToast } from '../ui/toast';
 import { placeThing } from '../map/mapActions';
 import { snap } from '../canvas/transforms';
@@ -622,9 +622,9 @@ export function toggle3D(): void {
   ensureInit();
 
   isActive = !isActive;
-  const finalizeCenter = splitMode ? preserveCenter() : null;
 
   if (isActive) {
+    const finalizeCenter = splitMode ? preserveCenter() : null;
     applyLayout();
     // Trigger 2D canvas resize in split mode (flex layout changed its size)
     window.dispatchEvent(new Event('resize'));
@@ -641,9 +641,13 @@ export function toggle3D(): void {
       showToast('Split view: right-click 3D pane for FPS look | WASD move');
     }
   } else {
+    const camX = camera.position.x;
+    const camY = -camera.position.z;
     applyLayout();
     window.dispatchEvent(new Event('resize'));
-    if (finalizeCenter) { finalizeCenter(); draw(); }
+    // Center 2D view on the 3D camera's last world position
+    centerOn(camX, camY);
+    draw();
     cancelAnimationFrame(animFrameId);
     // Exit pointer lock
     if (pointerLocked) document.exitPointerLock();
