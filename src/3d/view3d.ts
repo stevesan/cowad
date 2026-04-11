@@ -10,6 +10,15 @@ import { buildFloorsCeilings, buildWalls, buildThings, clearTexCache } from './b
 import { pointInSector } from '../geometry/cycleFinder';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { openTextureBrowser } from '../ui/textureBrowser';
+import { getSelectedThingType } from '../ui/thingBrowser';
+import { THINGS } from '../config/constants';
+
+function canPlaceThingOnHit(hit: THREE.Intersection): boolean {
+  const ud = hit.object.userData;
+  if (ud.surface !== 'ceiling') return true;
+  const info = THINGS[getSelectedThingType()];
+  return !!info?.ceiling;
+}
 
 let renderer: THREE.WebGLRenderer | null = null;
 let scene: THREE.Scene;
@@ -125,7 +134,7 @@ function ensureInit(): void {
       if (tool === 'thing') {
         raycaster.setFromCamera(unlockedMouse, camera);
         const hits = raycaster.intersectObjects(sceneGroup.children, false);
-        if (hits.length > 0) {
+        if (hits.length > 0 && canPlaceThingOnHit(hits[0])) {
           const p = hits[0].point;
           beginAction();
           placeThing(snap(p.x), snap(-p.z));
@@ -222,7 +231,7 @@ function ensureInit(): void {
         mouse.set(0, 0);
         raycaster.setFromCamera(mouse, camera);
         const hits = raycaster.intersectObjects(sceneGroup.children, false);
-        if (hits.length > 0) {
+        if (hits.length > 0 && canPlaceThingOnHit(hits[0])) {
           const p = hits[0].point;
           beginAction();
           placeThing(snap(p.x), snap(-p.z));
