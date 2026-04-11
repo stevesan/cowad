@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { maps, mouseWorld, selected, activeSide, setSelected, setActiveSide, snapSize, multiSelected, multiSelectType, setMultiSelected, multiSelectedSides, setMultiSelectedSides, tool } from '../state/appState';
 import { mapRef } from '../config/firebase';
 import { renderPanel } from '../ui/propertiesPanel';
-import { draw } from '../canvas/renderer';
+import { draw, preserveCenter } from '../canvas/renderer';
 import { showToast } from '../ui/toast';
 import { placeThing } from '../map/mapActions';
 import { snap } from '../canvas/transforms';
@@ -12,6 +12,7 @@ import { beginAction, record, endAction } from '../history/undoRedo';
 import { openTextureBrowser } from '../ui/textureBrowser';
 import { getSelectedThingType } from '../ui/thingBrowser';
 import { THINGS } from '../config/constants';
+import { VERTEX_PICK_PX } from '../config/ux';
 
 function canPlaceThingOnHit(hit: THREE.Intersection): boolean {
   const ud = hit.object.userData;
@@ -28,6 +29,13 @@ let isActive = false;
 let splitMode = false;
 let animFrameId = 0;
 let sceneGroup: THREE.Group;
+let overlayGroup: THREE.Group;
+let vertexHandle: THREE.Mesh;
+
+// ── 3D vertex editing ──
+let hoveredVertexId: string | null = null;
+let dragVertex: { id: string; planeY: number; origX: number; origY: number } | null = null;
+let justDragged = false;
 
 // ── Camera state ──
 let yaw = 0;     // radians, 0 = looking along +X
@@ -122,6 +130,16 @@ function ensureInit(): void {
   sceneGroup = new THREE.Group();
   scene.add(sceneGroup);
 
+  overlayGroup = new THREE.Group();
+  scene.add(overlayGroup);
+  vertexHandle = new THREE.Mesh(
+    new THREE.SphereGeometry(6, 16, 12),
+    new THREE.MeshBasicMaterial({ color: 0x00ffff, depthTest: false, transparent: true, opacity: 0.95 }),
+  );
+  vertexHandle.renderOrder = 999;
+  vertexHandle.visible = false;
+  overlayGroup.add(vertexHandle);
+
   // Ambient light (unused by MeshBasicMaterial, kept for future use)
   scene.add(new THREE.AmbientLight(0xffffff, 1));
 
@@ -129,6 +147,7 @@ function ensureInit(): void {
 
   renderer.domElement.addEventListener('click', (e: MouseEvent) => {
     if (justUnlocked) { justUnlocked = false; return; }
+    if (justDragged) { justDragged = false; return; }
     if (!pointerLocked) {
       // Thing tool: place thing at click position
       if (tool === 'thing') {
@@ -217,7 +236,26 @@ function ensureInit(): void {
       const rect = renderer.domElement.getBoundingClientRect();
       unlockedMouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       unlockedMouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+      // Vertex drag: project cursor onto horizontal plane and update Firebase
+      if (dragVertex) {
+        const wp = projectCursorToPlane(unlockedMouse, dragVertex.planeY);
+        if (wp) {
+          const wx = snap(wp.x), wy = snap(wp.y);
+          mapRef('vertices').child(dragVertex.id).update({ x: wx, y: wy });
+        }
+      }
     }
+  });
+
+  window.addEventListener('mouseup', (e: MouseEvent) => {
+    if (!isActive || !dragVertex || e.button !== 0) return;
+    const v = maps.vertices.get(dragVertex.id);
+    if (v && (v.x !== dragVertex.origX || v.y !== dragVertex.origY)) {
+      record(`map/vertices/${dragVertex.id}`, { x: dragVertex.origX, y: dragVertex.origY }, { ...v });
+    }
+    endAction();
+    dragVertex = null;
   });
 
   renderer.domElement.addEventListener('mouseenter', () => { mouseOverCanvas = true; });
@@ -242,6 +280,18 @@ function ensureInit(): void {
       // Left-click or right-click: exit pointer lock so user can select
       if (e.button === 0 || e.button === 2) document.exitPointerLock();
     } else {
+      // Unlocked left-click on a hovered vertex: start drag
+      if (e.button === 0 && hoveredVertexId && tool !== 'thing') {
+        const v = maps.vertices.get(hoveredVertexId);
+        if (v) {
+          const planeY = vertexFloorHeight(hoveredVertexId) + 4;
+          dragVertex = { id: hoveredVertexId, planeY, origX: v.x, origY: v.y };
+          justDragged = true;
+          beginAction();
+          e.preventDefault();
+          return;
+        }
+      }
       // Right-click: re-enter pointer lock for FPS movement
       if (e.button === 2) renderer!.domElement.requestPointerLock();
     }
@@ -307,6 +357,65 @@ function ensureInit(): void {
   });
 
   window.addEventListener('resize', resize);
+}
+
+// ── 3D vertex editing helpers ──
+
+function vertexFloorHeight(vid: string): number {
+  for (const ld of maps.linedefs.values()) {
+    if (ld.v1 !== vid && ld.v2 !== vid) continue;
+    const sid = ld.frontSide || ld.backSide;
+    if (!sid) continue;
+    const sd = maps.sidedefs.get(sid);
+    if (!sd || !sd.sector) continue;
+    const sec = maps.sectors.get(sd.sector);
+    if (sec) return sec.floor ?? 0;
+  }
+  return 0;
+}
+
+function pickVertexAt(ndc: THREE.Vector2): string | null {
+  if (!renderer) return null;
+  const w = renderer.domElement.clientWidth;
+  const h = renderer.domElement.clientHeight;
+  const cursorPx = { x: (ndc.x + 1) * 0.5 * w, y: (1 - ndc.y) * 0.5 * h };
+  const tmp = new THREE.Vector3();
+  let bestId: string | null = null;
+  let bestDist = VERTEX_PICK_PX;
+  maps.vertices.forEach((v, vid) => {
+    const fh = vertexFloorHeight(vid);
+    tmp.set(v.x, fh + 4, -v.y);
+    tmp.project(camera);
+    if (tmp.z < -1 || tmp.z > 1) return;
+    const px = (tmp.x + 1) * 0.5 * w;
+    const py = (1 - tmp.y) * 0.5 * h;
+    const d = Math.hypot(px - cursorPx.x, py - cursorPx.y);
+    if (d < bestDist) { bestDist = d; bestId = vid; }
+  });
+  return bestId;
+}
+
+function projectCursorToPlane(ndc: THREE.Vector2, planeY: number): { x: number; y: number } | null {
+  raycaster.setFromCamera(ndc, camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY);
+  const out = new THREE.Vector3();
+  if (!raycaster.ray.intersectPlane(plane, out)) return null;
+  return { x: out.x, y: -out.z };
+}
+
+function updateVertexHandle(): void {
+  if (!vertexHandle) return;
+  const vid = dragVertex?.id ?? hoveredVertexId;
+  if (!vid) { vertexHandle.visible = false; return; }
+  const v = maps.vertices.get(vid);
+  if (!v) { vertexHandle.visible = false; return; }
+  const fh = vertexFloorHeight(vid);
+  vertexHandle.position.set(v.x, fh + 4, -v.y);
+  vertexHandle.visible = true;
+  // Scale by distance so the handle stays a roughly constant screen size
+  const dist = camera.position.distanceTo(vertexHandle.position);
+  const s = Math.max(0.4, dist / 300);
+  vertexHandle.scale.setScalar(s);
 }
 
 function resize(): void {
@@ -448,6 +557,15 @@ function animate(time: number): void {
     hits.push(...raycaster.intersectObjects(sceneGroup.children, false));
   }
 
+  // Vertex hover (unlocked, mouse over canvas) — disabled while pointer-locked or thing tool
+  if (!pointerLocked && mouseOverCanvas && tool !== 'thing') {
+    hoveredVertexId = dragVertex ? dragVertex.id : pickVertexAt(unlockedMouse);
+  } else {
+    hoveredVertexId = null;
+  }
+  updateVertexHandle();
+  if (container) container.style.cursor = (hoveredVertexId || dragVertex) ? 'move' : (pointerLocked ? 'none' : 'default');
+
   // Update selection when pointer-locked
   if (pointerLocked) {
     if (hits.length > 0) {
@@ -504,11 +622,13 @@ export function toggle3D(): void {
   ensureInit();
 
   isActive = !isActive;
+  const finalizeCenter = splitMode ? preserveCenter() : null;
 
   if (isActive) {
     applyLayout();
     // Trigger 2D canvas resize in split mode (flex layout changed its size)
     window.dispatchEvent(new Event('resize'));
+    if (finalizeCenter) { finalizeCenter(); draw(); }
     resize();
     rebuildScene();
     positionCamera();
@@ -523,6 +643,7 @@ export function toggle3D(): void {
   } else {
     applyLayout();
     window.dispatchEvent(new Event('resize'));
+    if (finalizeCenter) { finalizeCenter(); draw(); }
     cancelAnimationFrame(animFrameId);
     // Exit pointer lock
     if (pointerLocked) document.exitPointerLock();
@@ -541,8 +662,10 @@ export function set3DSplit(v: boolean): void {
   if (!isActive) return;
   // Re-apply layout; exit pointer lock when switching to split
   if (splitMode && pointerLocked) document.exitPointerLock();
+  const finalizeCenter = preserveCenter();
   applyLayout();
   window.dispatchEvent(new Event('resize'));
+  finalizeCenter();
   resize();
   draw();
 }

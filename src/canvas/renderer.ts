@@ -16,6 +16,18 @@ export function initRenderer(c: HTMLCanvasElement): void {
 
 export function getCanvas(): HTMLCanvasElement { return canvas; }
 
+// Preserve the world-space point at the canvas center across a resize.
+// Call before the canvas dimensions change; it returns a finalize() to run after.
+export function preserveCenter(): () => void {
+  if (!canvas) return () => {};
+  const cx = (canvas.width / 2 - pan.x) / zoom;
+  const cy = -(canvas.height / 2 - pan.y) / zoom;
+  return () => {
+    pan.x = canvas.width / 2 - cx * zoom;
+    pan.y = canvas.height / 2 + cy * zoom;
+  };
+}
+
 export function zoomToFit(): void {
   if (!canvas || maps.vertices.size === 0) return;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
