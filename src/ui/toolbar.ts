@@ -41,11 +41,8 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
     openThingBrowser(() => doSetTool('thing'));
   });
 
-  const view3dBtn = document.getElementById('view3d-btn')!;
-  view3dBtn.addEventListener('click', () => {
+  document.getElementById('view3d-btn')!.addEventListener('click', () => {
     toggle3D();
-    view3dBtn.classList.toggle('active', is3DActive());
-    localStorage.setItem('cowad-view-3d', String(is3DActive()));
   });
 
   const splitChk = document.getElementById('split3d-chk') as HTMLInputElement;
@@ -57,9 +54,8 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
   });
 
   // Restore saved 3D view state
-  if (localStorage.getItem('cowad-view-3d') === 'true') {
+  if (localStorage.getItem('cowad-view-3d') === 'true' && !is3DActive()) {
     toggle3D();
-    view3dBtn.classList.toggle('active', is3DActive());
   }
 
   const recordBtn = document.getElementById('record-btn')!;

@@ -521,6 +521,9 @@ export function toggle3D(): void {
     for (const k in keys) keys[k] = false;
     draw();
   }
+  localStorage.setItem('cowad-view-3d', String(isActive));
+  const btn = document.getElementById('view3d-btn');
+  if (btn) btn.classList.toggle('active', isActive);
 }
 
 export function set3DSplit(v: boolean): void {
