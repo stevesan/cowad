@@ -1,4 +1,4 @@
-import { maps, pan, selected, hovered, tool, mouseWorld, zoom, setZoom, drawPoints, multiSelected, multiSelectType, boxSelectStart, snapSize } from '../state/appState';
+import { maps, pan, selected, hovered, tool, mouseWorld, zoom, setZoom, drawPoints, multiSelected, multiSelectType, boxSelectStart, snapSize, halfSectorType } from '../state/appState';
 import { THINGS, THING_SPRITE } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
 import { getSpritePrefixEntry, isWadLoaded } from '../wad/textureLoader';
@@ -64,6 +64,7 @@ export function draw(): void {
   ctx.fillRect(0, 0, W, H);
   drawGrid(W, H);
   drawSectors();
+  drawHalfSectors();
   drawLinedefs();
   drawVertices();
   drawThings();
@@ -123,6 +124,33 @@ function drawSectors(): void {
     ctx.fill('evenodd');
     if (isSel || isMultiSel) { ctx.strokeStyle = '#ff0'; ctx.lineWidth = 2; ctx.stroke(); }
     else if (isHov) { ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'; ctx.lineWidth = 1; ctx.stroke(); }
+  });
+}
+
+function drawHalfSectors(): void {
+  maps.halfSectors.forEach((hs, hid) => {
+    const poly = hs.outline;
+    if (!poly || poly.length < 3) return;
+    const isSel = selected?.type === 'halfSector' && selected.id === hid;
+    const isHov = hovered?.type  === 'halfSector' && hovered.id  === hid;
+    const baseFill   = hs.type === 'floor' ? 'rgba(80,200,255,0.18)' : 'rgba(255,140,80,0.18)';
+    const hovFill    = hs.type === 'floor' ? 'rgba(80,200,255,0.32)' : 'rgba(255,140,80,0.32)';
+    const baseStroke = hs.type === 'floor' ? 'rgba(80,200,255,0.85)' : 'rgba(255,140,80,0.85)';
+    ctx.beginPath();
+    const p0 = w2s(poly[0].x, poly[0].y);
+    ctx.moveTo(p0.x, p0.y);
+    for (let i = 1; i < poly.length; i++) {
+      const p = w2s(poly[i].x, poly[i].y);
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.fillStyle = isSel || isHov ? hovFill : baseFill;
+    ctx.fill();
+    ctx.strokeStyle = isSel ? '#ff0' : baseStroke;
+    ctx.lineWidth = isSel ? 2.5 : 1.5;
+    ctx.setLineDash(isSel ? [] : [6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
   });
 }
 
@@ -236,7 +264,15 @@ function drawThings(): void {
 }
 
 function drawPolygonPreview(): void {
-  if (tool !== 'draw') return;
+  if (tool !== 'draw' && tool !== 'half') return;
+  const isHalf = tool === 'half';
+  const previewFill   = isHalf
+    ? (halfSectorType === 'floor' ? 'rgba(80,200,255,0.12)' : 'rgba(255,140,80,0.12)')
+    : 'rgba(0, 180, 0, 0.08)';
+  const previewEdge   = isHalf
+    ? (halfSectorType === 'floor' ? '#5cf' : '#f95')
+    : '#0f0';
+  const previewVertex = previewEdge;
 
   // Show magnetic snap circle before first click
   if (drawPoints.length === 0) {
@@ -276,7 +312,7 @@ function drawPolygonPreview(): void {
 
   // Semi-transparent polygon fill preview
   if (drawPoints.length >= 2) {
-    ctx.fillStyle = 'rgba(0, 180, 0, 0.08)';
+    ctx.fillStyle = previewFill;
     ctx.beginPath();
     const p0 = w2s(first.x, first.y);
     ctx.moveTo(p0.x, p0.y);
@@ -291,7 +327,7 @@ function drawPolygonPreview(): void {
   }
 
   // Solid chain edges
-  ctx.strokeStyle = '#0f0';
+  ctx.strokeStyle = previewEdge;
   ctx.lineWidth = 2;
   for (let i = 0; i < drawPoints.length - 1; i++) {
     const s1 = w2s(drawPoints[i].x, drawPoints[i].y);
@@ -318,7 +354,7 @@ function drawPolygonPreview(): void {
   // Chain vertex markers
   for (let i = 0; i < drawPoints.length; i++) {
     const s = w2s(drawPoints[i].x, drawPoints[i].y);
-    ctx.fillStyle = i === 0 ? '#0f0' : '#0ff';
+    ctx.fillStyle = i === 0 ? previewVertex : '#0ff';
     const sz = i === 0 ? 5 : 3;
     ctx.fillRect(s.x - sz, s.y - sz, sz * 2, sz * 2);
   }

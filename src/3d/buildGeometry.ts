@@ -146,6 +146,60 @@ export function buildFloorsCeilings(group: THREE.Group): void {
   });
 }
 
+// ── Half-sectors (floor-only or ceiling-only surfaces) ──
+
+export function buildHalfSectors(group: THREE.Group): void {
+  maps.halfSectors.forEach((hs, hid) => {
+    const outline = hs.outline;
+    if (!outline || outline.length < 3) return;
+
+    // Three.js Shape expects CCW for the outer boundary so normals come out right.
+    const ccw = signedArea2(outline) > 0 ? outline : [...outline].reverse();
+
+    const shape = new THREE.Shape();
+    shape.moveTo(ccw[0].x, ccw[0].y);
+    for (let i = 1; i < ccw.length; i++) shape.lineTo(ccw[i].x, ccw[i].y);
+
+    let geo: THREE.ShapeGeometry;
+    try { geo = new THREE.ShapeGeometry(shape); }
+    catch { return; }
+
+    // Tile UVs at 64x64 like sector floors/ceilings
+    const uvAttr = geo.getAttribute('uv') as THREE.BufferAttribute;
+    const posAttr = geo.getAttribute('position') as THREE.BufferAttribute;
+    for (let i = 0; i < uvAttr.count; i++) {
+      uvAttr.setXY(i, posAttr.getX(i) / 64, posAttr.getY(i) / 64);
+    }
+
+    geo.rotateX(-Math.PI / 2);
+
+    const light = hs.light ?? 160;
+
+    if (hs.type === 'floor') {
+      const mat = makeMaterial(hs.tex || 'FLOOR4_8', light);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = hs.height ?? 0;
+      mesh.userData = { entityType: 'halfSector', entityId: hid, surface: 'floor' };
+      group.add(mesh);
+    } else {
+      // Ceiling: flip winding so normal faces downward
+      const idx = geo.getIndex();
+      if (idx) {
+        const arr = idx.array as Uint16Array | Uint32Array;
+        for (let i = 0; i < arr.length; i += 3) {
+          const tmp = arr[i]; arr[i] = arr[i + 2]; arr[i + 2] = tmp;
+        }
+        idx.needsUpdate = true;
+      }
+      const mat = makeMaterial(hs.tex || 'CEIL3_5', light);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.position.y = hs.height ?? 128;
+      mesh.userData = { entityType: 'halfSector', entityId: hid, surface: 'ceiling' };
+      group.add(mesh);
+    }
+  });
+}
+
 // ── Walls ──
 
 function makeWallQuad(

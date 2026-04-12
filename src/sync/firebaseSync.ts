@@ -56,7 +56,7 @@ function syncCollection(col: MapCollection): void {
 }
 
 export function initSync(): void {
-  (['vertices','linedefs','sidedefs','sectors','things'] as const).forEach(syncCollection);
+  (['vertices','linedefs','sidedefs','sectors','things','halfSectors'] as const).forEach(syncCollection);
 
   db.ref('settings/snapSize').on('value', (s: FirebaseSnapshot) => {
     const val = s.val();

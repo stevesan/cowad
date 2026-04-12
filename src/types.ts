@@ -40,18 +40,29 @@ export interface Thing {
   flags: number;
 }
 
+export type HalfSectorType = 'floor' | 'ceiling';
+
+export interface HalfSector {
+  type: HalfSectorType;
+  outline: { x: number; y: number }[]; // closed loop, no holes (phase 1)
+  height?: number;
+  tex?: string;
+  light?: number;
+}
+
 export interface MapData {
-  vertices: Map<string, Vertex>;
-  linedefs: Map<string, Linedef>;
-  sidedefs: Map<string, Sidedef>;
-  sectors:  Map<string, Sector>;
-  things:   Map<string, Thing>;
+  vertices:    Map<string, Vertex>;
+  linedefs:    Map<string, Linedef>;
+  sidedefs:    Map<string, Sidedef>;
+  sectors:     Map<string, Sector>;
+  things:      Map<string, Thing>;
+  halfSectors: Map<string, HalfSector>;
   [key: string]: Map<string, any>;
 }
 
-export type MapCollection = 'vertices' | 'linedefs' | 'sidedefs' | 'sectors' | 'things';
+export type MapCollection = 'vertices' | 'linedefs' | 'sidedefs' | 'sectors' | 'things' | 'halfSectors';
 
-export type ToolType = 'select' | 'draw' | 'thing';
+export type ToolType = 'select' | 'draw' | 'thing' | 'half';
 
 export interface DrawVertex {
   x: number;
@@ -60,7 +71,7 @@ export interface DrawVertex {
 }
 
 export interface Selection {
-  type: 'vertex' | 'linedef' | 'sector' | 'thing';
+  type: 'vertex' | 'linedef' | 'sector' | 'thing' | 'halfSector';
   id: string;
 }
 

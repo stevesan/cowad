@@ -1,5 +1,6 @@
 import { db } from '../config/firebase';
-import { setSelected } from '../state/appState';
+import { setSelected, setHalfSectorType } from '../state/appState';
+import type { HalfSectorType } from '../types';
 import { cleanupMap } from '../map/mapCleanup';
 import { exportWAD, launchWAD } from '../export/wadExport';
 import { exportJSON, importJSON } from '../export/jsonExport';
@@ -39,6 +40,11 @@ export function initToolbar(doSetTool: (t: ToolType) => void): void {
 
   document.getElementById('thing-type-btn')!.addEventListener('click', () => {
     openThingBrowser(() => doSetTool('thing'));
+  });
+
+  const halfSel = document.getElementById('half-type-sel') as HTMLSelectElement;
+  halfSel.addEventListener('change', () => {
+    setHalfSectorType(halfSel.value as HalfSectorType);
   });
 
   document.getElementById('view3d-btn')!.addEventListener('click', () => {

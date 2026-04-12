@@ -6,7 +6,7 @@ import { draw, preserveCenter, centerOn } from '../canvas/renderer';
 import { showToast } from '../ui/toast';
 import { placeThing } from '../map/mapActions';
 import { snap } from '../canvas/transforms';
-import { buildFloorsCeilings, buildWalls, buildThings, clearTexCache } from './buildGeometry';
+import { buildFloorsCeilings, buildWalls, buildThings, buildHalfSectors, clearTexCache } from './buildGeometry';
 import { pointInSector } from '../geometry/cycleFinder';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { openTextureBrowser } from '../ui/textureBrowser';
@@ -474,6 +474,7 @@ function rebuildScene(): void {
   }
 
   buildFloorsCeilings(sceneGroup);
+  buildHalfSectors(sceneGroup);
   buildWalls(sceneGroup);
   buildThings(sceneGroup);
 }

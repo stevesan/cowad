@@ -141,6 +141,15 @@ export function renderPanel(): void {
       html += `<option value="${t}" ${entity.type == t ? 'selected' : ''}>${info.name}</option>`;
     html += `</select></div>`;
     html += numField('Flags', p('flags'), entity.flags);
+
+  } else if (type === 'halfSector') {
+    const p = (f: string) => `halfSectors/${id}/${f}`;
+    const heightLabel = entity.type === 'ceiling' ? 'Ceil H' : 'Floor H';
+    const texLabel    = entity.type === 'ceiling' ? 'Ceil Tex' : 'Floor Tex';
+    html += `<div class="prop-row"><label>Type</label><span class="prop-val">${esc(entity.type)}</span></div>`;
+    html += numField(heightLabel, p('height'), entity.height)
+          + texField(texLabel,    p('tex'),    entity.tex, 'flat')
+          + numField('Light',     p('light'),  entity.light);
   }
 
   html += `<button class="del-btn" id="del-btn">Delete ${type}</button>`;

@@ -320,6 +320,10 @@ export function deleteSelected(): void {
     const th = maps.things.get(id);
     if (th) record(`map/things/${id}`, { ...th }, null);
     mapRef('things').child(id).remove();
+  } else if (type === 'halfSector') {
+    const hs = maps.halfSectors.get(id);
+    if (hs) record(`map/halfSectors/${id}`, { ...hs }, null);
+    mapRef('halfSectors').child(id).remove();
   }
   endAction();
   recordDeleteDone();

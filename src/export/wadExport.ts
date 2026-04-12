@@ -1,6 +1,7 @@
 import { maps, gameType } from '../state/appState';
 import { showToast } from '../ui/toast';
-import type { Linedef, Sidedef, Sector } from '../types';
+import type { Linedef, Sidedef, Sector, Vertex } from '../types';
+import { mergeHalfSectors } from './halfSectorMerge';
 
 interface ValidLinedef {
   lid: string;
@@ -26,11 +27,18 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
     return buf;
   }
 
+  // Merge half-sectors into a clone if any exist
+  const merged = mergeHalfSectors();
+  const mVerts: Map<string, Vertex> = merged ? merged.vertices : maps.vertices;
+  const mLines: Map<string, Linedef> = merged ? merged.linedefs : maps.linedefs;
+  const mSides: Map<string, Sidedef> = merged ? merged.sidedefs : maps.sidedefs;
+  const mSects: Map<string, Sector> = merged ? merged.sectors : maps.sectors;
+
   const vertIdx = new Map<string, number>();
-  let vi = 0; maps.vertices.forEach((_, id) => vertIdx.set(id, vi++));
+  let vi = 0; mVerts.forEach((_, id) => vertIdx.set(id, vi++));
 
   const validLinedefs: ValidLinedef[] = [];
-  maps.linedefs.forEach((ld, lid) => {
+  mLines.forEach((ld, lid) => {
     let v1i = vertIdx.get(ld.v1), v2i = vertIdx.get(ld.v2);
     if (v1i == null || v2i == null || v1i === v2i) return;
     validLinedefs.push({ lid, ld, v1i, v2i });
@@ -40,19 +48,19 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
 
   const usedSdIds = new Set<string>();
   for (const { ld } of validLinedefs) {
-    if (ld.frontSide && maps.sidedefs.has(ld.frontSide)) usedSdIds.add(ld.frontSide);
-    if (ld.backSide  && maps.sidedefs.has(ld.backSide))  usedSdIds.add(ld.backSide);
+    if (ld.frontSide && mSides.has(ld.frontSide)) usedSdIds.add(ld.frontSide);
+    if (ld.backSide  && mSides.has(ld.backSide))  usedSdIds.add(ld.backSide);
   }
 
   const usedSecIds = new Set<string>();
   for (const sdId of usedSdIds) {
-    const sd = maps.sidedefs.get(sdId);
-    if (sd && sd.sector && maps.sectors.has(sd.sector)) usedSecIds.add(sd.sector);
+    const sd = mSides.get(sdId);
+    if (sd && sd.sector && mSects.has(sd.sector)) usedSecIds.add(sd.sector);
   }
 
   const sdIdx = new Map<string, number>();
   const exportSidedefs: Sidedef[] = [];
-  maps.sidedefs.forEach((sd, id) => {
+  mSides.forEach((sd, id) => {
     if (!usedSdIds.has(id)) return;
     sdIdx.set(id, exportSidedefs.length);
     exportSidedefs.push(sd);
@@ -60,17 +68,17 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
 
   const secIdx = new Map<string, number>();
   const exportSectors: Sector[] = [];
-  maps.sectors.forEach((sec, id) => {
+  mSects.forEach((sec, id) => {
     if (!usedSecIds.has(id)) return;
     secIdx.set(id, exportSectors.length);
     exportSectors.push(sec);
   });
 
-  const nV = maps.vertices.size, nL = validLinedefs.length,
+  const nV = mVerts.size, nL = validLinedefs.length,
         nD = exportSidedefs.length, nS = exportSectors.length, nT = maps.things.size;
-  const skippedLd  = maps.linedefs.size - nL;
-  const skippedSd  = maps.sidedefs.size - nD;
-  const skippedSec = maps.sectors.size  - nS;
+  const skippedLd  = mLines.size - nL;
+  const skippedSd  = mSides.size - nD;
+  const skippedSec = mSects.size  - nS;
 
   const issues: string[] = [];
   if (!nT) issues.push('No things placed');
@@ -132,7 +140,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   // VERTEXES
   const vertsBuf = new ArrayBuffer(nV * 4);
   const vV = new DataView(vertsBuf); let vo = 0;
-  maps.vertices.forEach(v => {
+  mVerts.forEach(v => {
     vV.setInt16(vo, Math.round(v.x ?? 0), true); vo += 2;
     vV.setInt16(vo, Math.round(v.y ?? 0), true); vo += 2;
   });
@@ -143,7 +151,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
     const hasFront = ld.frontSide && sdIdx.has(ld.frontSide);
     const hasBack  = ld.backSide  && sdIdx.has(ld.backSide);
     if (!hasFront && !hasBack) continue;
-    const v1 = maps.vertices.get(ld.v1)!, v2 = maps.vertices.get(ld.v2)!;
+    const v1 = mVerts.get(ld.v1)!, v2 = mVerts.get(ld.v2)!;
     const dx = v2.x - v1.x, dy = v2.y - v1.y;
     const ang = Math.round(Math.atan2(dy, dx) / (2 * Math.PI) * 65536) & 0xFFFF;
     if (hasFront)
@@ -190,7 +198,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   function buildBlockmap(): ArrayBuffer {
     if (!nV || !nL) return new ArrayBuffer(0);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    maps.vertices.forEach(v => {
+    mVerts.forEach(v => {
       minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
       minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
     });
@@ -198,7 +206,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
     const cols = Math.max(1, Math.ceil((maxX - ox) / 128) + 1);
     const rows = Math.max(1, Math.ceil((maxY - oy) / 128) + 1);
     const lineArr = validLinedefs.map(({ ld }, i) => {
-      const v1 = maps.vertices.get(ld.v1)!, v2 = maps.vertices.get(ld.v2)!;
+      const v1 = mVerts.get(ld.v1)!, v2 = mVerts.get(ld.v2)!;
       return { i, x0: Math.min(v1.x,v2.x), x1: Math.max(v1.x,v2.x),
                   y0: Math.min(v1.y,v2.y), y1: Math.max(v1.y,v2.y) };
     });

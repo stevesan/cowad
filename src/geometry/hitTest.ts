@@ -58,6 +58,28 @@ function cross2d(ox: number, oy: number, ax: number, ay: number, bx: number, by:
   return (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
 }
 
+/** Returns intersection point + parametric t values, or null if no proper crossing. */
+export function segmentIntersectionPoint(
+  ax: number, ay: number, bx: number, by: number,
+  cx: number, cy: number, dx: number, dy: number
+): { x: number; y: number; tAB: number; tCD: number } | null {
+  if ((ax === cx && ay === cy) || (ax === dx && ay === dy) ||
+      (bx === cx && by === cy) || (bx === dx && by === dy)) return null;
+  const d1 = cross2d(cx, cy, dx, dy, ax, ay);
+  const d2 = cross2d(cx, cy, dx, dy, bx, by);
+  const d3 = cross2d(ax, ay, bx, by, cx, cy);
+  const d4 = cross2d(ax, ay, bx, by, dx, dy);
+  if (!(((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+        ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0)))) return null;
+  const tAB = d1 / (d1 - d2);
+  const tCD = d3 / (d3 - d4);
+  return {
+    x: Math.round(ax + tAB * (bx - ax)),
+    y: Math.round(ay + tAB * (by - ay)),
+    tAB, tCD,
+  };
+}
+
 /** True if segments AB and CD properly cross (shared endpoints excluded). */
 export function segmentsProperlyIntersect(
   ax: number, ay: number, bx: number, by: number,

@@ -7,11 +7,12 @@ import {
 } from '../state/appState';
 import { db, mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
-import { nearestVertex, nearestLinedef, nearestThing } from '../geometry/hitTest';
+import { nearestVertex, nearestLinedef, nearestThing, pointInPoly, polyArea } from '../geometry/hitTest';
 import { VERTEX_PICK_PX, LINEDEF_PICK_PX, THING_PICK_PX } from '../config/ux';
 import { buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
 import { placeThing, deleteSelected, deleteMultiSelected, splitLinedefAtPoint, mergeVertices, mergeSectors, bridgeLinedefs } from '../map/mapActions';
 import { drawClick, drawComplete, drawReset } from '../map/drawSession';
+import { halfDrawClick, halfDrawComplete, halfDrawReset } from '../map/halfDrawSession';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
@@ -20,6 +21,30 @@ import { launchWAD } from '../export/wadExport';
 import type { ToolType, Selection } from '../types';
 
 function select(type: Selection['type'], id: string): void { setSelected({ type, id }); renderPanel(); }
+
+function smallestAreaHit(wx: number, wy: number): Selection | null {
+  let best: Selection | null = null;
+  let bestArea = Infinity;
+
+  maps.sectors.forEach((_, sid) => {
+    if (!pointInSector(wx, wy, sid)) return;
+    const loops = buildSectorLoopIds(sid);
+    if (loops.length > 0) {
+      const poly = loops[0].map(vid => maps.vertices.get(vid)!).filter(Boolean);
+      const area = polyArea(poly);
+      if (area < bestArea) { bestArea = area; best = { type: 'sector', id: sid }; }
+    }
+  });
+
+  maps.halfSectors.forEach((hs, hid) => {
+    if (!hs.outline || hs.outline.length < 3) return;
+    if (!pointInPoly(wx, wy, hs.outline)) return;
+    const area = polyArea(hs.outline);
+    if (area < bestArea) { bestArea = area; best = { type: 'halfSector', id: hid }; }
+  });
+
+  return best;
+}
 
 function linedefSide(lid: string, wx: number, wy: number): 'front' | 'back' | null {
   const ld = maps.linedefs.get(lid);
@@ -148,9 +173,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       else if (tid !== null) h = { type: 'thing', id: tid };
       else if (lid !== null) h = { type: 'linedef', id: lid };
       else {
-        maps.sectors.forEach((_, sid) => {
-          if (pointInSector(wx, wy, sid)) h = { type: 'sector', id: sid };
-        });
+        h = smallestAreaHit(wx, wy);
       }
       // Update active side when cursor moves over a selected linedef
       if (selected?.type === 'linedef') {
@@ -164,7 +187,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         setHovered(h);
         draw();
       }
-    } else if (tool === 'draw') {
+    } else if (tool === 'draw' || tool === 'half') {
       draw(); // redraw preview
     }
   });
@@ -177,6 +200,10 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     }
     if (e.button === 2 && tool === 'draw') {
       drawComplete().then(() => draw());
+      return;
+    }
+    if (e.button === 2 && tool === 'half') {
+      halfDrawComplete().then(() => draw());
       return;
     }
     if (e.button !== 0) return;
@@ -236,11 +263,16 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         select('linedef', lid);
         startVertexDrag(collectVerticesForLinedefs([lid]), wx, wy);
       } else {
-        // Check for sector under cursor
-        let sectorHit: string | null = null;
-        maps.sectors.forEach((_, sid) => {
-          if (pointInSector(wx, wy, sid)) sectorHit = sid;
-        });
+        // Check for sector or half-sector under cursor (smallest area wins)
+        const areaHit = smallestAreaHit(wx, wy);
+        const sectorHit = areaHit?.type === 'sector' ? areaHit.id : null;
+
+        if (areaHit?.type === 'halfSector') {
+          setMultiSelected(new Set());
+          select('halfSector', areaHit.id);
+          draw();
+          return;
+        }
 
         if (sectorHit !== null && e.shiftKey) {
           // Shift+click: toggle sector in multiSelected
@@ -270,6 +302,10 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       await drawClick(wx, wy);
       draw();
 
+    } else if (tool === 'half') {
+      await halfDrawClick(wx, wy);
+      draw();
+
     } else if (tool === 'thing') {
       beginAction();
       placeThing(snap(wx), snap(wy));
@@ -290,11 +326,8 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       if (dx < clickThresh && dy < clickThresh) {
         // Tiny drag = click — try sector selection
         if (!boxSelectAdditive) { setMultiSelected(new Set()); setSelected(null); }
-        let found: string | null = null;
-        maps.sectors.forEach((_, sid) => {
-          if (pointInSector(start.x, start.y, sid)) found = sid;
-        });
-        if (found) select('sector', found);
+        const boxHit = smallestAreaHit(start.x, start.y);
+        if (boxHit) select(boxHit.type, boxHit.id);
         else renderPanel();
       } else {
         if (!boxSelectAdditive) setSelected(null);
@@ -376,6 +409,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
   function doSetTool(t: ToolType): void {
     setTool(t);
     drawReset();
+    halfDrawReset();
     setHovered(null);
     setMultiSelected(new Set());
     setBoxSelectStart(null);
@@ -415,7 +449,10 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     if (e.key === 'Enter' && tool === 'draw') {
       drawComplete().then(() => draw()); return;
     }
-    if (e.key === 'Escape') { drawReset(); setMultiSelected(new Set()); setBoxSelectStart(null); draw(); return; }
+    if (e.key === 'Enter' && tool === 'half') {
+      halfDrawComplete().then(() => draw()); return;
+    }
+    if (e.key === 'Escape') { drawReset(); halfDrawReset(); setMultiSelected(new Set()); setBoxSelectStart(null); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (multiSelected.size > 0) { deleteMultiSelected(); } else { deleteSelected(); }
       return;
@@ -450,7 +487,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
         if (lid !== null) { splitLinedefAtPoint(lid, snap(mouseWorld.x), snap(mouseWorld.y)); draw(); }
         return;
       }
-      const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', t: 'thing' };
+      const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', t: 'thing', h: 'half' };
       const mapped = keyMap[e.key.toLowerCase()];
       if (mapped) doSetTool(mapped);
     }
