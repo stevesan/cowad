@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { maps, setSelected } from '../../src/state/appState';
-import { drawClick, drawComplete } from '../../src/map/drawSession';
-import { dumpMapJSON, expectMapIsValid } from './setup';
+
+import { dumpMapJSON, expectMapIsValid }  from './setup';
+import { drawClick, drawComplete } from './setup';
 import { deleteSelected } from '../../src/map/mapActions';
 
 describe('recorded test case', () => {

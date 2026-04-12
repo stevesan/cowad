@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { maps} from '../../src/state/appState';
-import { drawClick, drawComplete } from '../../src/map/drawSession';
-import { findSectorAt, setSectorProperty, expectMapIsValid, dumpMapJSON } from './setup';
+
+import { findSectorAt, setSectorProperty, expectMapIsValid, dumpMapJSON }  from './setup';
+import { drawClick, drawComplete } from './setup';
 
 describe('islandInheritsWaterProps', () => {
   it('should produce correct map state', async () => {

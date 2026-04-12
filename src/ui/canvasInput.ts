@@ -3,7 +3,7 @@ import {
   spaceDown, dragState, mouseWorld, multiSelected, multiSelectType, boxSelectStart, activeSide, snapSize,
   setSelected, setHovered, setZoom, setIsPanning, setPanStart,
   setSpaceDown, setDragState, setMouseWorld, setTool,
-  setMultiSelected, setBoxSelectStart, setActiveSide,
+  setMultiSelected, setBoxSelectStart, setActiveSide, setDrawPoints,
 } from '../state/appState';
 import { db, mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
@@ -11,13 +11,16 @@ import { nearestVertex, nearestLinedef, nearestThing } from '../geometry/hitTest
 import { VERTEX_PICK_PX, LINEDEF_PICK_PX, THING_PICK_PX } from '../config/ux';
 import { buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
 import { placeThing, deleteSelected, deleteMultiSelected, splitLinedefAtPoint, mergeVertices, mergeSectors, bridgeLinedefs } from '../map/mapActions';
-import { drawClick, drawComplete, drawReset } from '../map/drawSession';
+import { drawClick, drawComplete } from '../map/drawSession';
+import { createLiveContext } from '../map/exportableMap';
 import { draw } from '../canvas/renderer';
 import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
 import { toggle3D, is3DActive, get3DCameraPos } from '../3d/view3d';
 import { launchWAD } from '../export/wadExport';
-import type { ToolType, Selection } from '../types';
+import type { ToolType, Selection, DrawVertex } from '../types';
+let drawChain: DrawVertex[] = [];
+function drawReset(): void { drawChain = []; setDrawPoints([]); }
 
 function select(type: Selection['type'], id: string): void { setSelected({ type, id }); renderPanel(); }
 
@@ -176,7 +179,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       e.preventDefault(); return;
     }
     if (e.button === 2 && tool === 'draw') {
-      drawComplete().then(() => draw());
+      drawComplete(drawChain, createLiveContext()).then(r => { drawChain = r.chain; draw(); });
       return;
     }
     if (e.button !== 0) return;
@@ -267,7 +270,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       draw();
 
     } else if (tool === 'draw') {
-      await drawClick(wx, wy);
+      drawChain = await drawClick(drawChain, wx, wy, createLiveContext());
       draw();
 
     } else if (tool === 'thing') {
@@ -413,7 +416,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
 
     if (e.key === ' ')      { setSpaceDown(true); setIsPanning(true); setPanStart({ mx: lastClientX, my: lastClientY, px: pan.x, py: pan.y }); e.preventDefault(); return; }
     if (e.key === 'Enter' && tool === 'draw') {
-      drawComplete().then(() => draw()); return;
+      drawComplete(drawChain, createLiveContext()).then(r => { drawChain = r.chain; draw(); }); return;
     }
     if (e.key === 'Escape') { drawReset(); setMultiSelected(new Set()); setBoxSelectStart(null); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') {

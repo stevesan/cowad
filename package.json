@@ -6,8 +6,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "playwright test",
-    "test:unit": "vitest run tests/unit"
+    "test": "vitest run tests/unit",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",

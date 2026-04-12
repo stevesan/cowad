@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { maps, setSelected, setMultiSelected, multiSelectType } from '../../src/state/appState';
-import { drawClick, drawComplete } from '../../src/map/drawSession';
-import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid, dumpMapJSON } from './setup';
+
+import { findVertexAt, findSectorAt, findLinedefNear, expectMapIsValid, dumpMapJSON }  from './setup';
+import { drawClick, drawComplete } from './setup';
 import { deleteSelected, deleteMultiSelected, mergeVertices, mergeSectors, bridgeLinedefs, placeThing, splitLinedefAtPoint } from '../../src/map/mapActions';
 
 describe('splitDonut', () => {

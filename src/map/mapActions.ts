@@ -6,6 +6,7 @@ import { beginAction, record, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { getSelectedThingType } from '../ui/thingBrowser';
 import { applyExternalDrawChain } from './drawSession';
+import { createLiveContext } from './exportableMap';
 import { recordDeleteBefore, recordDeleteDone, recordMergeVertices, recordMergeSectors, recordPlaceThing, recordSplitLinedef, recordDeleteMultiSelected } from '../testing/recorder';
 
 export function placeThing(wx: number, wy: number): void {
@@ -459,5 +460,5 @@ export async function bridgeLinedefs(lid1: string, lid2: string): Promise<void> 
     return { x: v.x, y: v.y, existingId: vid };
   });
 
-  await applyExternalDrawChain(chain, true);
+  await applyExternalDrawChain(chain, true, createLiveContext());
 }

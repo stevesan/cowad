@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { maps, setSelected } from '../../src/state/appState';
-import { drawClick, drawComplete } from '../../src/map/drawSession';
-import { findVertexAt, findSectorAt, expectMapIsValid, dumpMapJSON } from './setup';
+
+import { findVertexAt, findSectorAt, expectMapIsValid, dumpMapJSON }  from './setup';
+import { drawClick, drawComplete } from './setup';
 import { deleteSelected } from '../../src/map/mapActions';
 
 describe('pillar in pillar', () => {

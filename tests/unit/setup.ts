@@ -4,7 +4,10 @@ import { rebuildIndices } from '../../src/state/indices';
 import { pointInSector, buildSectorLoopIds } from '../../src/geometry/cycleFinder';
 import { nearestLinedef } from '../../src/geometry/hitTest';
 import { findSectorOverlaps } from '../../src/map/overlapCheck';
-import { drawReset } from '../../src/map/drawSession';
+import { setDrawPoints } from '../../src/state/appState';
+import { drawClick as _drawClick, drawComplete as _drawComplete } from '../../src/map/drawSession';
+import { createLiveContext } from '../../src/map/exportableMap';
+import type { DrawVertex } from '../../src/types';
 import { writeFileSync, mkdirSync } from 'fs';
 import { join } from 'path';
 
@@ -75,7 +78,19 @@ export function dumpMapJSON(label?: string): string {
   return filePath;
 }
 
+let drawChain: DrawVertex[] = [];
+
+export async function drawClick(wx: number, wy: number): Promise<void> {
+  drawChain = await _drawClick(drawChain, wx, wy, createLiveContext());
+}
+
+export async function drawComplete(): Promise<void> {
+  const result = await _drawComplete(drawChain, createLiveContext());
+  drawChain = result.chain;
+}
+
 beforeEach(() => {
+  drawChain = [];
   resetLocalDb();
   maps.vertices.clear();
   maps.linedefs.clear();
@@ -84,7 +99,7 @@ beforeEach(() => {
   maps.things.clear();
   rebuildIndices();
   initSync();
-  drawReset();
+  setDrawPoints([]);
   onTestFailed(({ task }) => {
     const name = task.name ?? 'unknown';
     const path = dumpMapJSON(name);

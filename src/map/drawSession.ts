@@ -8,25 +8,13 @@ import { beginAction, endAction } from '../history/undoRedo';
 import { showToast } from '../ui/toast';
 import { recordDrawClick, recordDrawComplete } from '../testing/recorder';
 import type { ExportableMap } from './exportableMap';
-import { createLiveContext } from './exportableMap';
 import type { DrawVertex } from '../types';
 
-let drawChain: DrawVertex[] = [];
-
-function syncDrawPoints(): void {
+function syncDrawPoints(drawChain: DrawVertex[]): void {
   setDrawPoints(drawChain.map(p => ({ x: p.x, y: p.y })));
 }
 
-export function drawReset(): void {
-  drawChain = [];
-  syncDrawPoints();
-}
-
-export function getDrawChain(): ReadonlyArray<DrawVertex> {
-  return drawChain;
-}
-
-function validateNewEdge(ax: number, ay: number, bx: number, by: number, map: ExportableMap): boolean {
+function validateNewEdge(ax: number, ay: number, bx: number, by: number, drawChain: ReadonlyArray<DrawVertex>, map: ExportableMap): boolean {
   for (const [, ld] of map.linedefs) {
     const v1 = map.vertices.get(ld.v1);
     const v2 = map.vertices.get(ld.v2);
@@ -54,9 +42,9 @@ function cloneSector(srcId: string, map: ExportableMap): string {
 
 type HE = { fromVid: string; toVid: string; ldId: string };
 
-export type LoopNode = { loop: HE[]; area2: number; children: LoopNode[] };
+type LoopNode = { loop: HE[]; area2: number; children: LoopNode[] };
 
-export function computeLoopHierarchy(
+function computeLoopHierarchy(
   faces: { loop: HE[]; area2: number }[],
   map: ExportableMap
 ): LoopNode[] {
@@ -111,13 +99,13 @@ export function computeLoopHierarchy(
   return roots;
 }
 
-async function applyDrawChain(isLoop: boolean): Promise<void> {
+async function applyDrawChain(drawChain: DrawVertex[], isLoop: boolean, map: ExportableMap): Promise<void> {
   const n = drawChain.length;
   if (n < 2) return;
 
-  const map = createLiveContext();
   beginAction();
 
+  // Resolve vertex IDs: reuse existing or create new
   const vertexIds: string[] = [];
   for (const pt of drawChain) {
     if (pt.existingId) {
@@ -143,18 +131,14 @@ async function applyDrawChain(isLoop: boolean): Promise<void> {
   fixSectors(new Set(activeLines), map);
 
   endAction();
-  drawReset();
+  setDrawPoints([]);
 }
 
-/** Apply an externally-built draw chain (used by bridgeLinedefs etc.). */
-export async function applyExternalDrawChain(chain: DrawVertex[], isLoop: boolean): Promise<void> {
-  drawChain = chain;
-  await applyDrawChain(isLoop);
-  drawReset();
+export async function applyExternalDrawChain(chain: DrawVertex[], isLoop: boolean, map: ExportableMap): Promise<void> {
+  await applyDrawChain(chain, isLoop, map);
 }
 
-export async function drawClick(wx: number, wy: number): Promise<void> {
-  const map = createLiveContext();
+export async function drawClick(drawChain: DrawVertex[], wx: number, wy: number, map: ExportableMap): Promise<DrawVertex[]> {
   const swx = snap(wx), swy = snap(wy);
   const existingVid = nearestVertex(wx, wy, VERTEX_PICK_PX / zoom);
 
@@ -173,15 +157,15 @@ export async function drawClick(wx: number, wy: number): Promise<void> {
 
   // First click
   if (drawChain.length === 0) {
-    drawChain.push({ x: clickX, y: clickY, existingId: clickExisting });
-    syncDrawPoints();
-    return;
+    const next = [...drawChain, { x: clickX, y: clickY, existingId: clickExisting }];
+    syncDrawPoints(next);
+    return next;
   }
 
   const first = drawChain[0];
   const last = drawChain[drawChain.length - 1];
 
-  if (clickX === last.x && clickY === last.y) return;
+  if (clickX === last.x && clickY === last.y) return drawChain;
 
   const CLOSE_THRESH = 24 / zoom;
 
@@ -190,52 +174,52 @@ export async function drawClick(wx: number, wy: number): Promise<void> {
     const nearFirst = Math.hypot(clickX - first.x, clickY - first.y) < CLOSE_THRESH;
     const isFirstVert = clickExisting !== null && clickExisting === first.existingId;
     if (nearFirst || isFirstVert) {
-      if (!validateNewEdge(last.x, last.y, first.x, first.y, map)) {
-        showToast('Closing edge would intersect'); return;
+      if (!validateNewEdge(last.x, last.y, first.x, first.y, drawChain, map)) {
+        showToast('Closing edge would intersect'); return drawChain;
       }
-      await applyDrawChain(true);
-      return;
+      await applyDrawChain(drawChain, true, map);
+      return [];
     }
   }
 
   // Close at different existing vert
   if (first.existingId && drawChain.length >= 1 && clickExisting &&
       !drawChain.some(p => p.existingId === clickExisting)) {
-    if (!validateNewEdge(last.x, last.y, clickX, clickY, map)) {
-      showToast('Edge would intersect'); return;
+    if (!validateNewEdge(last.x, last.y, clickX, clickY, drawChain, map)) {
+      showToast('Edge would intersect'); return drawChain;
     }
     const isSplit = anyBoundaryContainsBoth(first.existingId!, clickExisting!);
-    if (!isSplit && !validateNewEdge(clickX, clickY, first.x, first.y, map)) {
-      showToast('Closing edge would intersect'); return;
+    if (!isSplit && !validateNewEdge(clickX, clickY, first.x, first.y, drawChain, map)) {
+      showToast('Closing edge would intersect'); return drawChain;
     }
-    drawChain.push({ x: clickX, y: clickY, existingId: clickExisting });
-    await applyDrawChain(false);
-    return;
+    const next = [...drawChain, { x: clickX, y: clickY, existingId: clickExisting }];
+    await applyDrawChain(next, false, map);
+    return [];
   }
 
   // Normal add
-  if (!validateNewEdge(last.x, last.y, clickX, clickY, map)) {
-    showToast('Edge would intersect'); return;
+  if (!validateNewEdge(last.x, last.y, clickX, clickY, drawChain, map)) {
+    showToast('Edge would intersect'); return drawChain;
   }
 
-  drawChain.push({ x: clickX, y: clickY, existingId: clickExisting });
-  syncDrawPoints();
+  const next = [...drawChain, { x: clickX, y: clickY, existingId: clickExisting }];
+  syncDrawPoints(next);
+  return next;
 }
 
-export async function drawComplete(): Promise<boolean> {
-  const map = createLiveContext();
-  if (drawChain.length < 3) return false;
+export async function drawComplete(drawChain: DrawVertex[], map: ExportableMap): Promise<{ completed: boolean; chain: DrawVertex[] }> {
+  if (drawChain.length < 3) return { completed: false, chain: drawChain };
   const first = drawChain[0], last = drawChain[drawChain.length - 1];
-  if (!validateNewEdge(last.x, last.y, first.x, first.y, map)) {
+  if (!validateNewEdge(last.x, last.y, first.x, first.y, drawChain, map)) {
     showToast('Closing edge would intersect');
-    return false;
+    return { completed: false, chain: drawChain };
   }
   recordDrawComplete();
-  await applyDrawChain(true);
-  return true;
+  await applyDrawChain(drawChain, true, map);
+  return { completed: true, chain: [] };
 }
 
-export function fixSectors(newLds: Set<string>, map: ExportableMap): void {
+function fixSectors(newLds: Set<string>, map: ExportableMap): void {
   const c = map;
 
   // Build vertex adjacency from ALL linedefs, sorted by angle.
@@ -416,6 +400,7 @@ export function fixSectors(newLds: Set<string>, map: ExportableMap): void {
         isNewOrCloned = true;
       }
     } else if (isInward) {
+      // All SDs clear: look on opposite sides for adjacent sector
       let adjSector: string | null = null;
       for (const he of face.loop) {
         const ld = c.linedefs.get(he.ldId)!;
@@ -450,6 +435,7 @@ export function fixSectors(newLds: Set<string>, map: ExportableMap): void {
       }
       isNewOrCloned = true;
     } else {
+      // Outward, all SDs clear: find containing sector via hierarchy parent
       const node = nodeByKey.get(faceKey(face.loop));
       if (!node) continue;
       const parent = parentOf.get(node);
@@ -487,12 +473,14 @@ export function fixSectors(newLds: Set<string>, map: ExportableMap): void {
     if (!node) continue;
 
     if (face.area2 > 0) {
+      // Inward: find existing loops immediately contained by this boundary
       for (const child of node.children) {
         if (newFaceKeys.has(faceKey(child.loop))) continue;
         const childSdIds = child.loop.map(ensureSidedef);
         for (const sdId of childSdIds) assignSdToSector(sdId, sectorId);
       }
     } else {
+      // Outward: find existing loop that immediately contains this hole
       const parent = parentOf.get(node);
       if (parent && !newFaceKeys.has(faceKey(parent.loop))) {
         let parentChanged = false;
@@ -502,6 +490,8 @@ export function fixSectors(newLds: Set<string>, map: ExportableMap): void {
           if (!sd || sd.sector !== sectorId) parentChanged = true;
           assignSdToSector(sdId, sectorId);
         }
+        // If the parent's sidedefs changed sector, its other children (existing
+        // hole loops) also need updating.
         if (parentChanged) {
           processed.push({ face: { loop: parent.loop, area2: parent.area2 }, sectorId, isNewOrCloned: true });
         }

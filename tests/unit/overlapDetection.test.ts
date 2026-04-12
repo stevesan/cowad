@@ -1,9 +1,9 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { maps } from '../../src/state/appState';
 import { rebuildIndices } from '../../src/state/indices';
-import { expectNoSectorOverlaps } from './setup';
+import { expectNoSectorOverlaps }  from './setup';
 import { createSectorFromPolygon } from '../../src/map/mapActions';
-import { findVertexAt } from './setup';
+import { findVertexAt }  from './setup';
 
 // Helper to manually build a sector from raw polygon coordinates,
 // bypassing createSectorFromPolygon's overlap prevention.
