@@ -1,5 +1,6 @@
 import { mapRef } from '../config/firebase';
 import { maps, selected, setSelected, multiSelected, multiSelectType, setMultiSelected, mouseWorld, triggerRenderPanel, triggerDraw } from '../state/appState';
+import type { HalfSector, Point } from '../types';
 import { findExistingLinedef, mergeWouldDuplicate } from '../geometry/sectorQueries';
 import { segmentsProperlyIntersect } from '../geometry/hitTest';
 import { beginAction, record, endAction } from '../history/undoRedo';
@@ -8,6 +9,15 @@ import { getSelectedThingType } from '../ui/thingBrowser';
 import { applyExternalDrawChain } from './drawSession';
 import { createLiveContext } from './exportableMap';
 import { recordDeleteBefore, recordDeleteDone, recordMergeVertices, recordMergeSectors, recordPlaceThing, recordSplitLinedef, recordDeleteMultiSelected } from '../testing/recorder';
+
+export function createHalfSector(points: Point[], type: 'ceiling' | 'floor'): void {
+  if (points.length < 3) return;
+  const hs: HalfSector = type === 'ceiling' ? { type, points } : { type, points };
+  beginAction();
+  const ref = mapRef('halfSectors').push(hs);
+  record(`map/halfSectors/${ref.key}`, null, hs);
+  endAction();
+}
 
 export function placeThing(wx: number, wy: number): void {
   const type = getSelectedThingType();
@@ -321,6 +331,10 @@ export function deleteSelected(): void {
     const th = maps.things.get(id);
     if (th) record(`map/things/${id}`, { ...th }, null);
     mapRef('things').child(id).remove();
+  } else if (type === 'halfSector') {
+    const hs = maps.halfSectors.get(id);
+    if (hs) record(`map/halfSectors/${id}`, { ...hs }, null);
+    mapRef('halfSectors').child(id).remove();
   }
   endAction();
   recordDeleteDone();

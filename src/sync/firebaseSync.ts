@@ -7,10 +7,19 @@ import type { MapCollection } from '../types';
 
 function colToType(col: string): string { return col.replace(/s$/, ''); }
 
+// Firebase may return dense arrays as objects with numeric keys when the data
+// was updated field-by-field. Normalise back to a proper array.
+function normalizeVal(col: MapCollection, val: any): any {
+  if (col === 'halfSectors' && val && val.points && !Array.isArray(val.points)) {
+    return { ...val, points: Object.values(val.points) };
+  }
+  return val;
+}
+
 function syncCollection(col: MapCollection): void {
   const ref = mapRef(col as string);
   ref.on('child_added',   (s: FirebaseSnapshot) => {
-    maps[col].set(s.key, s.val());
+    maps[col].set(s.key, normalizeVal(col, s.val()));
     if (col === 'linedefs') {
       const val = s.val();
       onLinedefAdded(s.key, val.v1, val.v2);
@@ -23,7 +32,7 @@ function syncCollection(col: MapCollection): void {
   ref.on('child_changed', (s: FirebaseSnapshot) => {
     const oldLd = col === 'linedefs' ? maps.linedefs.get(s.key) : undefined;
     const oldSd = col === 'sidedefs' ? maps.sidedefs.get(s.key) : undefined;
-    maps[col].set(s.key, s.val());
+    maps[col].set(s.key, normalizeVal(col, s.val()));
     if (col === 'linedefs' && oldLd) {
       const val = s.val();
       onLinedefChanged(s.key, val.v1, val.v2, oldLd.v1, oldLd.v2);
@@ -56,7 +65,7 @@ function syncCollection(col: MapCollection): void {
 }
 
 export function initSync(): void {
-  (['vertices','linedefs','sidedefs','sectors','things'] as const).forEach(syncCollection);
+  (['vertices','linedefs','sidedefs','sectors','things','halfSectors'] as const).forEach(syncCollection);
 
   db.ref('settings/snapSize').on('value', (s: FirebaseSnapshot) => {
     const val = s.val();

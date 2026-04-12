@@ -58,6 +58,34 @@ function cross2d(ox: number, oy: number, ax: number, ay: number, bx: number, by:
   return (ax - ox) * (by - oy) - (ay - oy) * (bx - ox);
 }
 
+/** Returns the interior intersection point of segments AB and CD, or null if they don't cross. */
+export function segmentIntersectionPoint(
+  ax: number, ay: number, bx: number, by: number,
+  cx: number, cy: number, dx: number, dy: number
+): { x: number; y: number } | null {
+  const dx1 = bx - ax, dy1 = by - ay;
+  const dx2 = dx - cx, dy2 = dy - cy;
+  const denom = dx1 * dy2 - dy1 * dx2;
+  if (Math.abs(denom) < 1e-10) return null; // parallel
+  const t = ((cx - ax) * dy2 - (cy - ay) * dx2) / denom;
+  const u = ((cx - ax) * dy1 - (cy - ay) * dx1) / denom;
+  // Strictly interior intersections only (not at shared endpoints)
+  if (t <= 0 || t >= 1 || u <= 0 || u >= 1) return null;
+  return { x: ax + t * dx1, y: ay + t * dy1 };
+}
+
+/** Returns the ID of the smallest half-sector polygon containing (wx, wy), or null. */
+export function halfSectorAt(wx: number, wy: number): string | null {
+  let bestId: string | null = null;
+  let bestArea = Infinity;
+  for (const [id, hs] of maps.halfSectors) {
+    if (!pointInPoly(wx, wy, hs.points)) continue;
+    const area = polyArea(hs.points);
+    if (area < bestArea) { bestArea = area; bestId = id; }
+  }
+  return bestId;
+}
+
 /** True if segments AB and CD properly cross (shared endpoints excluded). */
 export function segmentsProperlyIntersect(
   ax: number, ay: number, bx: number, by: number,

@@ -219,7 +219,7 @@ export async function drawComplete(drawChain: DrawVertex[], map: ExportableMap):
   return { completed: true, chain: [] };
 }
 
-function fixSectors(newLds: Set<string>, map: ExportableMap): void {
+export function fixSectors(newLds: Set<string>, map: ExportableMap): void {
   const c = map;
 
   // Build vertex adjacency from ALL linedefs, sorted by angle.

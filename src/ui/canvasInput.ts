@@ -1,16 +1,17 @@
 import {
   maps, tool, selected, hovered, pan, zoom, isPanning, panStart,
   spaceDown, dragState, mouseWorld, multiSelected, multiSelectType, boxSelectStart, activeSide, snapSize,
+  halfSectorType, setHalfSectorType,
   setSelected, setHovered, setZoom, setIsPanning, setPanStart,
   setSpaceDown, setDragState, setMouseWorld, setTool,
   setMultiSelected, setBoxSelectStart, setActiveSide, setDrawPoints,
 } from '../state/appState';
 import { db, mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
-import { nearestVertex, nearestLinedef, nearestThing } from '../geometry/hitTest';
+import { nearestVertex, nearestLinedef, nearestThing, halfSectorAt } from '../geometry/hitTest';
 import { VERTEX_PICK_PX, LINEDEF_PICK_PX, THING_PICK_PX } from '../config/ux';
 import { buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
-import { placeThing, deleteSelected, deleteMultiSelected, splitLinedefAtPoint, mergeVertices, mergeSectors, bridgeLinedefs } from '../map/mapActions';
+import { placeThing, deleteSelected, deleteMultiSelected, splitLinedefAtPoint, mergeVertices, mergeSectors, bridgeLinedefs, createHalfSector } from '../map/mapActions';
 import { drawClick, drawComplete } from '../map/drawSession';
 import { createLiveContext } from '../map/exportableMap';
 import { draw } from '../canvas/renderer';
@@ -21,6 +22,40 @@ import { launchWAD } from '../export/wadExport';
 import type { ToolType, Selection, DrawVertex } from '../types';
 let drawChain: DrawVertex[] = [];
 function drawReset(): void { drawChain = []; setDrawPoints([]); }
+
+function completeHalfSector(): void {
+  if (drawChain.length < 3) return;
+  createHalfSector(drawChain.map(p => ({ x: p.x, y: p.y })), halfSectorType);
+  drawChain = [];
+  setDrawPoints([]);
+  draw();
+}
+
+/** Handle a click in the halfSector tool: add point or close polygon. */
+function hsClick(wx: number, wy: number): void {
+  const swx = snap(wx), swy = snap(wy);
+  const existingVid = nearestVertex(wx, wy, VERTEX_PICK_PX / zoom);
+  let clickX: number, clickY: number;
+  if (existingVid) {
+    const v = maps.vertices.get(existingVid)!;
+    clickX = v.x; clickY = v.y;
+  } else {
+    clickX = swx; clickY = swy;
+  }
+
+  // Close when clicking near the first point (3+ points already placed)
+  if (drawChain.length >= 3) {
+    const first = drawChain[0];
+    if (Math.hypot(clickX - first.x, clickY - first.y) < 24 / zoom) {
+      completeHalfSector();
+      return;
+    }
+  }
+
+  const next: DrawVertex[] = [...drawChain, { x: clickX, y: clickY, existingId: existingVid }];
+  drawChain = next;
+  setDrawPoints(next.map(p => ({ x: p.x, y: p.y })));
+}
 
 function select(type: Selection['type'], id: string): void { setSelected({ type, id }); renderPanel(); }
 
@@ -154,6 +189,11 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         maps.sectors.forEach((_, sid) => {
           if (pointInSector(wx, wy, sid)) h = { type: 'sector', id: sid };
         });
+        // Check half-sectors if no normal sector hit
+        if (!h) {
+          const hsId = halfSectorAt(wx, wy);
+          if (hsId) h = { type: 'halfSector', id: hsId };
+        }
       }
       // Update active side when cursor moves over a selected linedef
       if (selected?.type === 'linedef') {
@@ -167,7 +207,7 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         setHovered(h);
         draw();
       }
-    } else if (tool === 'draw') {
+    } else if (tool === 'draw' || tool === 'halfSector') {
       draw(); // redraw preview
     }
   });
@@ -180,6 +220,10 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     }
     if (e.button === 2 && tool === 'draw') {
       drawComplete(drawChain, createLiveContext()).then(r => { drawChain = r.chain; draw(); });
+      return;
+    }
+    if (e.button === 2 && tool === 'halfSector') {
+      completeHalfSector();
       return;
     }
     if (e.button !== 0) return;
@@ -262,9 +306,16 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
           select('sector', sectorHit);
           startVertexDrag(collectVerticesForSectors([sectorHit]), wx, wy);
         } else {
-          // Start box select (works on empty space)
-          boxSelectAdditive = e.shiftKey;
-          setBoxSelectStart({ x: wx, y: wy });
+          // Check for half-sector under cursor before starting box select
+          const hsId = halfSectorAt(wx, wy);
+          if (hsId) {
+            setMultiSelected(new Set());
+            select('halfSector', hsId);
+          } else {
+            // Start box select (works on empty space)
+            boxSelectAdditive = e.shiftKey;
+            setBoxSelectStart({ x: wx, y: wy });
+          }
         }
       }
       draw();
@@ -272,6 +323,9 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
     } else if (tool === 'draw') {
       drawChain = await drawClick(drawChain, wx, wy, createLiveContext());
       draw();
+
+    } else if (tool === 'halfSector') {
+      hsClick(wx, wy);
 
     } else if (tool === 'thing') {
       beginAction();
@@ -383,8 +437,10 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     setMultiSelected(new Set());
     setBoxSelectStart(null);
     document.querySelectorAll<HTMLElement>('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
+    const hsSel = document.getElementById('hs-type-sel') as HTMLSelectElement | null;
+    if (hsSel) hsSel.style.display = t === 'halfSector' ? '' : 'none';
     canvas.style.cursor = t === 'select' ? 'crosshair'
-      : t === 'draw' ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z\' fill=\'white\' stroke=\'black\' stroke-width=\'.5\'/%3E%3C/svg%3E") 2 22, crosshair'
+      : (t === 'draw' || t === 'halfSector') ? 'url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'24\' height=\'24\' viewBox=\'0 0 24 24\'%3E%3Cpath d=\'M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 000-1.41l-2.34-2.34a1 1 0 00-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z\' fill=\'white\' stroke=\'black\' stroke-width=\'.5\'/%3E%3C/svg%3E") 2 22, crosshair'
       : 'crosshair';
     draw();
   }
@@ -418,6 +474,7 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
     if (e.key === 'Enter' && tool === 'draw') {
       drawComplete(drawChain, createLiveContext()).then(r => { drawChain = r.chain; draw(); }); return;
     }
+    if (e.key === 'Enter' && tool === 'halfSector') { completeHalfSector(); return; }
     if (e.key === 'Escape') { drawReset(); setMultiSelected(new Set()); setBoxSelectStart(null); draw(); return; }
     if (e.key === 'Delete' || e.key === 'Backspace') {
       if (multiSelected.size > 0) { deleteMultiSelected(); } else { deleteSelected(); }
@@ -453,12 +510,21 @@ export function initKeyboard(canvas: HTMLCanvasElement): (t: ToolType) => void {
         if (lid !== null) { splitLinedefAtPoint(lid, snap(mouseWorld.x), snap(mouseWorld.y)); draw(); }
         return;
       }
-      const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', t: 'thing' };
+      const keyMap: Record<string, ToolType> = { s: 'select', d: 'draw', h: 'halfSector', t: 'thing' };
       const mapped = keyMap[e.key.toLowerCase()];
       if (mapped) doSetTool(mapped);
     }
   });
   window.addEventListener('keyup', e => { if (e.key === ' ') { setSpaceDown(false); setIsPanning(false); } });
+
+  // Wire up half-sector type dropdown
+  const hsSel = document.getElementById('hs-type-sel') as HTMLSelectElement | null;
+  if (hsSel) {
+    hsSel.value = halfSectorType;
+    hsSel.addEventListener('change', () => {
+      setHalfSectorType(hsSel.value as 'ceiling' | 'floor');
+    });
+  }
 
   return doSetTool;
 }

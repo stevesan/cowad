@@ -1,6 +1,7 @@
 import { maps, gameType } from '../state/appState';
 import { showToast } from '../ui/toast';
-import type { Linedef, Sidedef, Sector } from '../types';
+import { mergeHalfSectors } from './halfSectorExport';
+import type { Linedef, Sidedef, Sector, Vertex, Thing } from '../types';
 
 interface ValidLinedef {
   lid: string;
@@ -18,7 +19,13 @@ interface Seg {
   offset: number;
 }
 
-function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
+function buildWAD(
+  wVertices: Map<string, Vertex>,
+  wLinedefs: Map<string, Linedef>,
+  wSidedefs: Map<string, Sidedef>,
+  wSectors:  Map<string, Sector>,
+  wThings:   Map<string, Thing>,
+): { wad: ArrayBuffer; msg: string } | null {
   function str8(s: string | null | undefined): Uint8Array {
     const buf = new Uint8Array(8);
     const str = (s == null || s === '') ? '-' : String(s);
@@ -27,10 +34,10 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   }
 
   const vertIdx = new Map<string, number>();
-  let vi = 0; maps.vertices.forEach((_, id) => vertIdx.set(id, vi++));
+  let vi = 0; wVertices.forEach((_, id) => vertIdx.set(id, vi++));
 
   const validLinedefs: ValidLinedef[] = [];
-  maps.linedefs.forEach((ld, lid) => {
+  wLinedefs.forEach((ld, lid) => {
     let v1i = vertIdx.get(ld.v1), v2i = vertIdx.get(ld.v2);
     if (v1i == null || v2i == null || v1i === v2i) return;
     validLinedefs.push({ lid, ld, v1i, v2i });
@@ -40,19 +47,19 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
 
   const usedSdIds = new Set<string>();
   for (const { ld } of validLinedefs) {
-    if (ld.frontSide && maps.sidedefs.has(ld.frontSide)) usedSdIds.add(ld.frontSide);
-    if (ld.backSide  && maps.sidedefs.has(ld.backSide))  usedSdIds.add(ld.backSide);
+    if (ld.frontSide && wSidedefs.has(ld.frontSide)) usedSdIds.add(ld.frontSide);
+    if (ld.backSide  && wSidedefs.has(ld.backSide))  usedSdIds.add(ld.backSide);
   }
 
   const usedSecIds = new Set<string>();
   for (const sdId of usedSdIds) {
-    const sd = maps.sidedefs.get(sdId);
-    if (sd && sd.sector && maps.sectors.has(sd.sector)) usedSecIds.add(sd.sector);
+    const sd = wSidedefs.get(sdId);
+    if (sd && sd.sector && wSectors.has(sd.sector)) usedSecIds.add(sd.sector);
   }
 
   const sdIdx = new Map<string, number>();
   const exportSidedefs: Sidedef[] = [];
-  maps.sidedefs.forEach((sd, id) => {
+  wSidedefs.forEach((sd, id) => {
     if (!usedSdIds.has(id)) return;
     sdIdx.set(id, exportSidedefs.length);
     exportSidedefs.push(sd);
@@ -60,21 +67,21 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
 
   const secIdx = new Map<string, number>();
   const exportSectors: Sector[] = [];
-  maps.sectors.forEach((sec, id) => {
+  wSectors.forEach((sec, id) => {
     if (!usedSecIds.has(id)) return;
     secIdx.set(id, exportSectors.length);
     exportSectors.push(sec);
   });
 
-  const nV = maps.vertices.size, nL = validLinedefs.length,
-        nD = exportSidedefs.length, nS = exportSectors.length, nT = maps.things.size;
-  const skippedLd  = maps.linedefs.size - nL;
-  const skippedSd  = maps.sidedefs.size - nD;
-  const skippedSec = maps.sectors.size  - nS;
+  const nV = wVertices.size, nL = validLinedefs.length,
+        nD = exportSidedefs.length, nS = exportSectors.length, nT = wThings.size;
+  const skippedLd  = wLinedefs.size - nL;
+  const skippedSd  = wSidedefs.size - nD;
+  const skippedSec = wSectors.size  - nS;
 
   const issues: string[] = [];
   if (!nT) issues.push('No things placed');
-  else if (![...maps.things.values()].some(t => t.type === 1))
+  else if (![...wThings.values()].some(t => t.type === 1))
     issues.push('No Player 1 Start (thing type 1) — game will crash on load');
   if (skippedLd)  issues.push(`${skippedLd} degenerate linedef(s) skipped`);
   if (skippedSd)  issues.push(`${skippedSd} orphaned sidedef(s) skipped`);
@@ -96,7 +103,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   // THINGS
   const thingsBuf = new ArrayBuffer(nT * 10);
   const thV = new DataView(thingsBuf); let to = 0;
-  maps.things.forEach(th => {
+  wThings.forEach(th => {
     thV.setInt16(to, Math.round(th.x     ?? 0), true); to += 2;
     thV.setInt16(to, Math.round(th.y     ?? 0), true); to += 2;
     thV.setInt16(to, Math.round(th.angle ?? 0), true); to += 2;
@@ -132,7 +139,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   // VERTEXES
   const vertsBuf = new ArrayBuffer(nV * 4);
   const vV = new DataView(vertsBuf); let vo = 0;
-  maps.vertices.forEach(v => {
+  wVertices.forEach(v => {
     vV.setInt16(vo, Math.round(v.x ?? 0), true); vo += 2;
     vV.setInt16(vo, Math.round(v.y ?? 0), true); vo += 2;
   });
@@ -143,7 +150,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
     const hasFront = ld.frontSide && sdIdx.has(ld.frontSide);
     const hasBack  = ld.backSide  && sdIdx.has(ld.backSide);
     if (!hasFront && !hasBack) continue;
-    const v1 = maps.vertices.get(ld.v1)!, v2 = maps.vertices.get(ld.v2)!;
+    const v1 = wVertices.get(ld.v1)!, v2 = wVertices.get(ld.v2)!;
     const dx = v2.x - v1.x, dy = v2.y - v1.y;
     const ang = Math.round(Math.atan2(dy, dx) / (2 * Math.PI) * 65536) & 0xFFFF;
     if (hasFront)
@@ -190,7 +197,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   function buildBlockmap(): ArrayBuffer {
     if (!nV || !nL) return new ArrayBuffer(0);
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    maps.vertices.forEach(v => {
+    wVertices.forEach(v => {
       minX = Math.min(minX, v.x); maxX = Math.max(maxX, v.x);
       minY = Math.min(minY, v.y); maxY = Math.max(maxY, v.y);
     });
@@ -198,7 +205,7 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
     const cols = Math.max(1, Math.ceil((maxX - ox) / 128) + 1);
     const rows = Math.max(1, Math.ceil((maxY - oy) / 128) + 1);
     const lineArr = validLinedefs.map(({ ld }, i) => {
-      const v1 = maps.vertices.get(ld.v1)!, v2 = maps.vertices.get(ld.v2)!;
+      const v1 = wVertices.get(ld.v1)!, v2 = wVertices.get(ld.v2)!;
       return { i, x0: Math.min(v1.x,v2.x), x1: Math.max(v1.x,v2.x),
                   y0: Math.min(v1.y,v2.y), y1: Math.max(v1.y,v2.y) };
     });
@@ -276,8 +283,20 @@ function buildWAD(): { wad: ArrayBuffer; msg: string } | null {
   return { wad, msg };
 }
 
+function getExportMaps() {
+  const hs = mergeHalfSectors(maps.halfSectors);
+  return {
+    vertices: hs ? hs.vertices : maps.vertices,
+    linedefs: hs ? hs.linedefs : maps.linedefs,
+    sidedefs: hs ? hs.sidedefs : maps.sidedefs,
+    sectors:  hs ? hs.sectors  : maps.sectors,
+    things:   maps.things,
+  };
+}
+
 export function exportWAD(): void {
-  const result = buildWAD();
+  const em = getExportMaps();
+  const result = buildWAD(em.vertices, em.linedefs, em.sidedefs, em.sectors, em.things);
   if (!result) return;
   const { wad, msg } = result;
 
@@ -300,7 +319,8 @@ export async function launchWAD(spawnX?: number, spawnY?: number): Promise<void>
     return;
   }
 
-  const result = buildWAD();
+  const em = getExportMaps();
+  const result = buildWAD(em.vertices, em.linedefs, em.sidedefs, em.sectors, em.things);
   if (!result) return;
   const { wad, msg } = result;
 

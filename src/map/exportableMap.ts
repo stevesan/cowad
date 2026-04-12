@@ -1,7 +1,7 @@
 import { mapRef } from '../config/firebase';
 import { maps } from '../state/appState';
 import { record } from '../history/undoRedo';
-import type { Vertex, Linedef, Sidedef, Sector } from '../types';
+import type { Vertex, Linedef, Sidedef, Sector, HalfSector } from '../types';
 
 export interface ExportableMap {
   vertices: Map<string, Vertex>;
@@ -16,6 +16,13 @@ export interface ExportableMap {
 
   updateLinedef(id: string, updates: Partial<Linedef>): void;
   updateSidedef(id: string, updates: Partial<Sidedef>): void;
+}
+
+/** Extends ExportableMap with the half-sector collection (edit-time only; not exported to WAD). */
+export interface EditableMap extends ExportableMap {
+  halfSectors: Map<string, HalfSector>;
+  pushHalfSector(val: HalfSector): string;
+  deleteHalfSector(id: string): void;
 }
 
 export function createLiveContext(): ExportableMap {

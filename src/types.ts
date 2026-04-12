@@ -40,18 +40,25 @@ export interface Thing {
   flags: number;
 }
 
+export type HalfSector =
+// TODO ceiling and floor should be height, and required
+// light should be required
+  | { type: 'ceiling'; points: Point[]; ceiling?: number; ceilTex?: string; light?: number }
+  | { type: 'floor';   points: Point[]; floor?: number;   floorTex?: string; light?: number };
+
 export interface MapData {
   vertices: Map<string, Vertex>;
   linedefs: Map<string, Linedef>;
   sidedefs: Map<string, Sidedef>;
   sectors:  Map<string, Sector>;
   things:   Map<string, Thing>;
+  halfSectors: Map<string, HalfSector>;
   [key: string]: Map<string, any>;
 }
 
-export type MapCollection = 'vertices' | 'linedefs' | 'sidedefs' | 'sectors' | 'things';
+export type MapCollection = 'vertices' | 'linedefs' | 'sidedefs' | 'sectors' | 'things' | 'halfSectors';
 
-export type ToolType = 'select' | 'draw' | 'thing';
+export type ToolType = 'select' | 'draw' | 'halfSector' | 'thing';
 
 export interface DrawVertex {
   x: number;
@@ -60,7 +67,7 @@ export interface DrawVertex {
 }
 
 export interface Selection {
-  type: 'vertex' | 'linedef' | 'sector' | 'thing';
+  type: 'vertex' | 'linedef' | 'sector' | 'thing' | 'halfSector';
   id: string;
 }
 

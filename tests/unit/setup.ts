@@ -97,6 +97,7 @@ beforeEach(() => {
   maps.sidedefs.clear();
   maps.sectors.clear();
   maps.things.clear();
+  maps.halfSectors.clear();
   rebuildIndices();
   initSync();
   setDrawPoints([]);

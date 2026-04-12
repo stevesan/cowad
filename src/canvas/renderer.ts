@@ -1,4 +1,4 @@
-import { maps, pan, selected, hovered, tool, mouseWorld, zoom, setZoom, drawPoints, multiSelected, multiSelectType, boxSelectStart, snapSize } from '../state/appState';
+import { maps, pan, selected, hovered, tool, mouseWorld, zoom, setZoom, drawPoints, multiSelected, multiSelectType, boxSelectStart, snapSize, halfSectorType } from '../state/appState';
 import { THINGS, THING_SPRITE } from '../config/constants';
 import { w2s, s2w, snap } from './transforms';
 import { getSpritePrefixEntry, isWadLoaded } from '../wad/textureLoader';
@@ -64,6 +64,7 @@ export function draw(): void {
   ctx.fillRect(0, 0, W, H);
   drawGrid(W, H);
   drawSectors();
+  drawHalfSectors();
   drawLinedefs();
   drawVertices();
   drawThings();
@@ -123,6 +124,45 @@ function drawSectors(): void {
     ctx.fill('evenodd');
     if (isSel || isMultiSel) { ctx.strokeStyle = '#ff0'; ctx.lineWidth = 2; ctx.stroke(); }
     else if (isHov) { ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'; ctx.lineWidth = 1; ctx.stroke(); }
+  });
+}
+
+function drawHalfSectors(): void {
+  maps.halfSectors.forEach((hs, hsId) => {
+    if (hs.points.length < 3) return;
+    const isSel = selected?.type === 'halfSector' && selected.id === hsId;
+    const isHov = hovered?.type  === 'halfSector' && hovered.id  === hsId;
+
+    // Fill: floor=green, ceiling=blue; selected/hovered brighter
+    const base = hs.type === 'floor' ? [0, 160, 80] : [0, 80, 200];
+    const alpha = (isSel || isHov) ? 0.35 : 0.18;
+    ctx.fillStyle = `rgba(${base[0]},${base[1]},${base[2]},${alpha})`;
+    ctx.beginPath();
+    const p0 = w2s(hs.points[0].x, hs.points[0].y);
+    ctx.moveTo(p0.x, p0.y);
+    for (let i = 1; i < hs.points.length; i++) {
+      const p = w2s(hs.points[i].x, hs.points[i].y);
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    // Outline
+    const strokeColor = isSel ? '#ff0'
+      : isHov ? '#fff'
+      : hs.type === 'floor' ? '#0a6' : '#06f';
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth   = (isSel || isHov) ? 2 : 1;
+    ctx.setLineDash(isSel || isHov ? [] : [4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(p0.x, p0.y);
+    for (let i = 1; i < hs.points.length; i++) {
+      const p = w2s(hs.points[i].x, hs.points[i].y);
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    ctx.setLineDash([]);
   });
 }
 
@@ -236,7 +276,14 @@ function drawThings(): void {
 }
 
 function drawPolygonPreview(): void {
-  if (tool !== 'draw') return;
+  if (tool !== 'draw' && tool !== 'halfSector') return;
+  // For half-sector tool, colour the preview differently by HS type
+  const isHs = tool === 'halfSector';
+  const strokeMain  = isHs ? (halfSectorType === 'floor' ? '#0f6' : '#06f') : '#0f0';
+  const strokePreview = isHs ? (halfSectorType === 'floor' ? '#6f0' : '#06f') : '#ff0';
+  const fillPreview = isHs
+    ? (halfSectorType === 'floor' ? 'rgba(0,180,80,0.08)' : 'rgba(0,80,200,0.08)')
+    : 'rgba(0,180,0,0.08)';
 
   // Show magnetic snap circle before first click
   if (drawPoints.length === 0) {
@@ -276,7 +323,7 @@ function drawPolygonPreview(): void {
 
   // Semi-transparent polygon fill preview
   if (drawPoints.length >= 2) {
-    ctx.fillStyle = 'rgba(0, 180, 0, 0.08)';
+    ctx.fillStyle = fillPreview;
     ctx.beginPath();
     const p0 = w2s(first.x, first.y);
     ctx.moveTo(p0.x, p0.y);
@@ -291,7 +338,7 @@ function drawPolygonPreview(): void {
   }
 
   // Solid chain edges
-  ctx.strokeStyle = '#0f0';
+  ctx.strokeStyle = strokeMain;
   ctx.lineWidth = 2;
   for (let i = 0; i < drawPoints.length - 1; i++) {
     const s1 = w2s(drawPoints[i].x, drawPoints[i].y);
@@ -302,7 +349,7 @@ function drawPolygonPreview(): void {
   // Dashed preview: last → target
   const sLast = w2s(last.x, last.y);
   const sTarget = w2s(targetX, targetY);
-  ctx.strokeStyle = '#ff0';
+  ctx.strokeStyle = strokePreview;
   ctx.lineWidth = 1;
   ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.moveTo(sLast.x, sLast.y); ctx.lineTo(sTarget.x, sTarget.y); ctx.stroke();
@@ -318,7 +365,7 @@ function drawPolygonPreview(): void {
   // Chain vertex markers
   for (let i = 0; i < drawPoints.length; i++) {
     const s = w2s(drawPoints[i].x, drawPoints[i].y);
-    ctx.fillStyle = i === 0 ? '#0f0' : '#0ff';
+    ctx.fillStyle = i === 0 ? strokeMain : '#0ff';
     const sz = i === 0 ? 5 : 3;
     ctx.fillRect(s.x - sz, s.y - sz, sz * 2, sz * 2);
   }
@@ -326,9 +373,9 @@ function drawPolygonPreview(): void {
   // Snap / close indicators
   if (closingAtStart) {
     const sFirst = w2s(first.x, first.y);
-    ctx.fillStyle = 'rgba(0, 255, 0, 0.15)';
+    ctx.fillStyle = isHs ? 'rgba(0,200,100,0.15)' : 'rgba(0,255,0,0.15)';
     ctx.beginPath(); ctx.arc(sFirst.x, sFirst.y, 30, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = '#0f0';
+    ctx.strokeStyle = strokeMain;
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(sFirst.x, sFirst.y, 30, 0, Math.PI * 2); ctx.stroke();
   } else if (snappedToExisting) {

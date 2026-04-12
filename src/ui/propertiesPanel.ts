@@ -141,6 +141,20 @@ export function renderPanel(): void {
       html += `<option value="${t}" ${entity.type == t ? 'selected' : ''}>${info.name}</option>`;
     html += `</select></div>`;
     html += numField('Flags', p('flags'), entity.flags);
+
+  } else if (type === 'halfSector') {
+    const p = (f: string) => `halfSectors/${id}/${f}`;
+    const hsType: string = entity.type ?? 'floor';
+    html += `<div class="prop-row"><label>Type</label><span class="prop-val">${esc(hsType)}</span></div>`;
+    if (hsType === 'ceiling') {
+      html += numField('Ceil H',   p('ceiling'), entity.ceiling)
+            + texField('Ceil Tex', p('ceilTex'), entity.ceilTex || 'CEIL3_5', 'flat')
+            + numField('Light',    p('light'),   entity.light);
+    } else {
+      html += numField('Floor H',   p('floor'),    entity.floor)
+            + texField('Floor Tex', p('floorTex'), entity.floorTex || 'FLOOR4_8', 'flat')
+            + numField('Light',     p('light'),    entity.light);
+    }
   }
 
   html += `<button class="del-btn" id="del-btn">Delete ${type}</button>`;
