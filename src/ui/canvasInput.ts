@@ -19,7 +19,7 @@ import { renderPanel } from './propertiesPanel';
 import { beginAction, record, endAction, undo, redo } from '../history/undoRedo';
 import { toggle3D, is3DActive, get3DCameraPos } from '../3d/view3d';
 import { launchWAD } from '../export/wadExport';
-import type { ToolType, Selection, DrawVertex } from '../types';
+import type { ToolType, Selection, DrawVertex, HalfSector } from '../types';
 let drawChain: DrawVertex[] = [];
 function drawReset(): void { drawChain = []; setDrawPoints([]); }
 
@@ -72,6 +72,10 @@ function linedefSide(lid: string, wx: number, wy: number): 'front' | 'back' | nu
 
 let dragOrigin: Record<string, any> | null = null;
 let dragOffset = { x: 0, y: 0 };
+
+// Half-sector drag state
+let hsDragId: string | null = null;
+let hsDragOrigin: HalfSector | null = null;
 
 // Multi-drag state
 let multiDragOrigins: Map<string, { x: number; y: number }> | null = null;
@@ -161,6 +165,17 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       for (const [vid, orig] of multiDragOrigins) {
         mapRef('vertices').child(vid).update({ x: orig.x + dx, y: orig.y + dy });
       }
+      return;
+    }
+
+    if (hsDragId && hsDragOrigin) {
+      const rawX = mouseWorld.x + dragOffset.x, rawY = mouseWorld.y + dragOffset.y;
+      const anchorX = e.altKey ? rawX : snap(rawX);
+      const anchorY = e.altKey ? rawY : snap(rawY);
+      const dx = anchorX - hsDragOrigin.points[0].x;
+      const dy = anchorY - hsDragOrigin.points[0].y;
+      const points = hsDragOrigin.points.map(p => ({ x: p.x + dx, y: p.y + dy }));
+      mapRef('halfSectors').child(hsDragId).update({ points });
       return;
     }
 
@@ -283,11 +298,12 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         select('linedef', lid);
         startVertexDrag(collectVerticesForLinedefs([lid]), wx, wy);
       } else {
-        // Check for sector under cursor
+        // Check for sector and half-sector under cursor
         let sectorHit: string | null = null;
         maps.sectors.forEach((_, sid) => {
           if (pointInSector(wx, wy, sid)) sectorHit = sid;
         });
+        const hsId = halfSectorAt(wx, wy);
 
         if (sectorHit !== null && e.shiftKey) {
           // Shift+click: toggle sector in multiSelected
@@ -298,6 +314,16 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
           else next.add(sectorHit);
           setMultiSelected(next, 'sector');
           setSelected(null); renderPanel();
+        } else if (hsId && e.ctrlKey) {
+          // Ctrl+drag half-sector (takes priority over Ctrl+drag sector)
+          setMultiSelected(new Set());
+          select('halfSector', hsId);
+          const hs = maps.halfSectors.get(hsId);
+          if (hs) {
+            hsDragId = hsId;
+            hsDragOrigin = { ...hs, points: hs.points.map(p => ({ ...p })) };
+            dragOffset = { x: hs.points[0].x - wx, y: hs.points[0].y - wy };
+          }
         } else if (sectorHit !== null && e.ctrlKey && multiSelectType === 'sector' && multiSelected.has(sectorHit)) {
           // Ctrl+drag multi-selected sectors
           startVertexDrag(collectVerticesForSectors(multiSelected), wx, wy);
@@ -305,17 +331,13 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
           setMultiSelected(new Set());
           select('sector', sectorHit);
           startVertexDrag(collectVerticesForSectors([sectorHit]), wx, wy);
+        } else if (hsId) {
+          setMultiSelected(new Set());
+          select('halfSector', hsId);
         } else {
-          // Check for half-sector under cursor before starting box select
-          const hsId = halfSectorAt(wx, wy);
-          if (hsId) {
-            setMultiSelected(new Set());
-            select('halfSector', hsId);
-          } else {
-            // Start box select (works on empty space)
-            boxSelectAdditive = e.shiftKey;
-            setBoxSelectStart({ x: wx, y: wy });
-          }
+          // Start box select (works on empty space)
+          boxSelectAdditive = e.shiftKey;
+          setBoxSelectStart({ x: wx, y: wy });
         }
       }
       draw();
@@ -371,6 +393,22 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         }
       }
       draw();
+      return;
+    }
+
+    // Finalize HS drag
+    if (hsDragId && hsDragOrigin) {
+      const current = maps.halfSectors.get(hsDragId);
+      if (current) {
+        const moved = current.points.some((p, i) => p.x !== hsDragOrigin!.points[i].x || p.y !== hsDragOrigin!.points[i].y);
+        if (moved) {
+          beginAction();
+          record(`map/halfSectors/${hsDragId}`, hsDragOrigin, { ...current });
+          endAction();
+        }
+      }
+      hsDragId = null;
+      hsDragOrigin = null;
       return;
     }
 
