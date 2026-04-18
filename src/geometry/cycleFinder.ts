@@ -2,24 +2,23 @@ import { maps } from '../state/appState';
 import { getLinedefsForSector } from '../state/indices';
 import { pointInPoly, polyArea } from './hitTest';
 import { signedArea2 } from './polygonMath';
-import type { Point } from '../types';
+import type { Point, Linedef, Vertex, Sidedef } from '../types';
+import type { ExportableMap } from '../map/exportableMap';
 
-/** Return all boundary loops for a sector as vertex ID arrays.
- *  Uses planar face traversal: at each vertex, edges are sorted by angle
- *  and we always pick the next CW edge from the arrival direction. Each
- *  directed half-edge belongs to exactly one face. The exterior (unbounded)
- *  face of each connected component is identified and removed. */
-export function buildSectorLoopIds(sid: string): string[][] {
-  const ldIds = getLinedefsForSector(sid);
-  if (!ldIds.size) return [];
-
+/** Core PFT algorithm: given a set of linedef IDs and explicit vertex/linedef maps,
+ *  returns interior face loops as vertex ID arrays. */
+function buildLoopsFromLinedefs(
+  ldIds: Set<string>,
+  linedefs: Map<string, Linedef>,
+  vertices: Map<string, Vertex>,
+): string[][] {
   // Build adjacency: vertex → list of {angle, neighbor} sorted by angle (CCW)
   const adj = new Map<string, { angle: number; vid: string }[]>();
   for (const ldId of ldIds) {
-    const ld = maps.linedefs.get(ldId);
+    const ld = linedefs.get(ldId);
     if (!ld) continue;
-    const v1 = maps.vertices.get(ld.v1);
-    const v2 = maps.vertices.get(ld.v2);
+    const v1 = vertices.get(ld.v1);
+    const v2 = vertices.get(ld.v2);
     if (!v1 || !v2) continue;
     if (!adj.has(ld.v1)) adj.set(ld.v1, []);
     if (!adj.has(ld.v2)) adj.set(ld.v2, []);
@@ -54,7 +53,7 @@ export function buildSectorLoopIds(sid: string): string[][] {
   const compBestX = new Array(numComps).fill(-Infinity);
   const compBestY = new Array(numComps).fill(-Infinity);
   for (const [vid, comp] of compOf) {
-    const v = maps.vertices.get(vid)!;
+    const v = vertices.get(vid)!;
     if (v.x > compBestX[comp] || (v.x === compBestX[comp] && v.y > compBestY[comp])) {
       compBestX[comp] = v.x; compBestY[comp] = v.y; compRight[comp] = vid;
     }
@@ -111,7 +110,7 @@ export function buildSectorLoopIds(sid: string): string[][] {
   // Fix winding: outer loop (largest) must be CW (signedArea2 > 0),
   // hole loops must be CCW (signedArea2 < 0).
   if (result.length > 0) {
-    const polys = result.map(l => l.map(id => maps.vertices.get(id)!));
+    const polys = result.map(l => l.map(id => vertices.get(id)!));
     const areas = polys.map(p => signedArea2(p));
     let outerIdx = 0, maxAbs = 0;
     for (let i = 0; i < areas.length; i++) {
@@ -125,6 +124,17 @@ export function buildSectorLoopIds(sid: string): string[][] {
   }
 
   return result;
+}
+
+/** Return all boundary loops for a sector as vertex ID arrays.
+ *  Uses planar face traversal: at each vertex, edges are sorted by angle
+ *  and we always pick the next CW edge from the arrival direction. Each
+ *  directed half-edge belongs to exactly one face. The exterior (unbounded)
+ *  face of each connected component is identified and removed. */
+export function buildSectorLoopIds(sid: string): string[][] {
+  const ldIds = getLinedefsForSector(sid);
+  if (!ldIds.size) return [];
+  return buildLoopsFromLinedefs(ldIds, maps.linedefs, maps.vertices);
 }
 
 /** Return all boundary loops for a sector (outer + holes). */
@@ -154,4 +164,21 @@ export function pointInSector(px: number, py: number, sid: string): boolean {
     if (pointInPoly(px, py, loop)) count++;
   }
   return (count & 1) === 1;
+}
+
+/** Like buildSectorPolys but reads from an explicit ExportableMap (no global index). */
+export function buildSectorPolysFrom(sid: string, m: ExportableMap): Point[][] {
+  const sds = new Set<string>();
+  for (const [sdId, sd] of m.sidedefs) {
+    if ((sd as Sidedef).sector === sid) sds.add(sdId);
+  }
+  const ldIds = new Set<string>();
+  for (const [ldId, ld] of m.linedefs) {
+    if ((ld.frontSide && sds.has(ld.frontSide)) || (ld.backSide && sds.has(ld.backSide)))
+      ldIds.add(ldId);
+  }
+  if (!ldIds.size) return [];
+  return buildLoopsFromLinedefs(ldIds, m.linedefs, m.vertices)
+    .map(loop => loop.map(id => m.vertices.get(id)).filter((v): v is Point => !!v))
+    .filter(poly => poly.length >= 3);
 }

@@ -1,10 +1,12 @@
 import * as THREE from 'three';
 import { maps } from '../state/appState';
-import { buildSectorPolys, pointInSector } from '../geometry/cycleFinder';
+import { buildSectorPolysFrom } from '../geometry/cycleFinder';
 import { signedArea2 } from '../geometry/polygonMath';
+import { pointInPoly } from '../geometry/hitTest';
 import { getTextureDataUrl, isWadLoaded, getTextures, getSpritePrefixEntry } from '../wad/textureLoader';
 import { THINGS, THING_SPRITE } from '../config/constants';
 import { CAT_COLOR } from '../config/ux';
+import type { ExportableMap } from '../map/exportableMap';
 
 // ── Texture cache ──
 
@@ -71,9 +73,9 @@ function makeMaterial(texName: string, light: number, colorKey = false): THREE.M
 
 // ── Floors & Ceilings ──
 
-export function buildFloorsCeilings(group: THREE.Group): void {
-  maps.sectors.forEach((sec, sid) => {
-    const loops = buildSectorPolys(sid);
+export function buildFloorsCeilings(group: THREE.Group, m: ExportableMap): void {
+  m.sectors.forEach((sec, sid) => {
+    const loops = buildSectorPolysFrom(sid, m);
     if (!loops.length) return;
 
     // Find outer boundary (largest absolute area)
@@ -117,12 +119,16 @@ export function buildFloorsCeilings(group: THREE.Group): void {
     // Rotate from XY to XZ plane: (x, y, 0) → (x, 0, -y)
     geo.rotateX(-Math.PI / 2);
 
-    const light = sec.light ?? 160;
+    const floorH   = sec.floor   ?? 0;
+    const ceilH    = sec.ceiling ?? 128;
+    const floorTex = sec.floorTex || 'FLOOR4_8';
+    const ceilTex  = sec.ceilTex  || 'CEIL3_5';
+    const light    = sec.light    ?? 160;
 
     // Floor
-    const floorMat = makeMaterial(sec.floorTex || 'FLOOR4_8', light);
+    const floorMat = makeMaterial(floorTex, light);
     const floorMesh = new THREE.Mesh(geo, floorMat);
-    floorMesh.position.y = sec.floor ?? 0;
+    floorMesh.position.y = floorH;
     floorMesh.userData = { entityType: 'sector', entityId: sid, surface: 'floor' };
     group.add(floorMesh);
 
@@ -138,9 +144,9 @@ export function buildFloorsCeilings(group: THREE.Group): void {
       }
       ceilIndex.needsUpdate = true;
     }
-    const ceilMat = makeMaterial(sec.ceilTex || 'CEIL3_5', light);
+    const ceilMat = makeMaterial(ceilTex, light);
     const ceilMesh = new THREE.Mesh(ceilGeo, ceilMat);
-    ceilMesh.position.y = sec.ceiling ?? 128;
+    ceilMesh.position.y = ceilH;
     ceilMesh.userData = { entityType: 'sector', entityId: sid, surface: 'ceiling' };
     group.add(ceilMesh);
   });
@@ -263,16 +269,16 @@ function makeMidWallQuad(
   group.add(mesh);
 }
 
-export function buildWalls(group: THREE.Group): void {
-  maps.linedefs.forEach((ld, lid) => {
-    const v1 = maps.vertices.get(ld.v1);
-    const v2 = maps.vertices.get(ld.v2);
+export function buildWalls(group: THREE.Group, m: ExportableMap): void {
+  m.linedefs.forEach((ld, lid) => {
+    const v1 = m.vertices.get(ld.v1);
+    const v2 = m.vertices.get(ld.v2);
     if (!v1 || !v2) return;
 
-    const frontSd = ld.frontSide ? maps.sidedefs.get(ld.frontSide) : null;
-    const backSd = ld.backSide ? maps.sidedefs.get(ld.backSide) : null;
-    const frontSec = frontSd?.sector ? maps.sectors.get(frontSd.sector) : null;
-    const backSec = backSd?.sector ? maps.sectors.get(backSd.sector) : null;
+    const frontSd = ld.frontSide ? m.sidedefs.get(ld.frontSide) : null;
+    const backSd = ld.backSide ? m.sidedefs.get(ld.backSide) : null;
+    const frontSec = frontSd?.sector ? m.sectors.get(frontSd.sector) : null;
+    const backSec = backSd?.sector ? m.sectors.get(backSd.sector) : null;
 
     if (!frontSec && !backSec) return;
 
@@ -371,27 +377,29 @@ export function buildWalls(group: THREE.Group): void {
 
 // ── Things ──
 
-function thingFloorHeight(wx: number, wy: number): number {
+function thingFloorHeight(wx: number, wy: number, m: ExportableMap): number {
   let floorH = 0;
-  maps.sectors.forEach((sec, sid) => {
-    if (pointInSector(wx, wy, sid)) {
-      floorH = sec.floor ?? 0;
-    }
+  m.sectors.forEach((sec, sid) => {
+    const polys = buildSectorPolysFrom(sid, m);
+    let count = 0;
+    for (const poly of polys) if (pointInPoly(wx, wy, poly)) count++;
+    if ((count & 1) === 1) floorH = sec.floor ?? 0;
   });
   return floorH;
 }
 
-function thingCeilHeight(wx: number, wy: number): number {
+function thingCeilHeight(wx: number, wy: number, m: ExportableMap): number {
   let ceilH = 128;
-  maps.sectors.forEach((sec, sid) => {
-    if (pointInSector(wx, wy, sid)) {
-      ceilH = sec.ceiling ?? 128;
-    }
+  m.sectors.forEach((sec, sid) => {
+    const polys = buildSectorPolysFrom(sid, m);
+    let count = 0;
+    for (const poly of polys) if (pointInPoly(wx, wy, poly)) count++;
+    if ((count & 1) === 1) ceilH = sec.ceiling ?? 128;
   });
   return ceilH;
 }
 
-export function buildThings(group: THREE.Group): void {
+export function buildThings(group: THREE.Group, m: ExportableMap): void {
   const spriteTexCache = new Map<string, THREE.Texture>();
 
   maps.things.forEach((thing, tid) => {
@@ -400,8 +408,8 @@ export function buildThings(group: THREE.Group): void {
     const radius = info?.radius || 16;
     const color = CAT_COLOR[cat] || '#fff';
     const isCeiling = info?.ceiling ?? false;
-    const floorH = thingFloorHeight(thing.x, thing.y);
-    const ceilH = isCeiling ? thingCeilHeight(thing.x, thing.y) : 0;
+    const floorH = thingFloorHeight(thing.x, thing.y, m);
+    const ceilH = isCeiling ? thingCeilHeight(thing.x, thing.y, m) : 0;
 
     // Try sprite
     const spritePrefix = THING_SPRITE[thing.type];

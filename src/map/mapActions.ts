@@ -12,7 +12,9 @@ import { recordDeleteBefore, recordDeleteDone, recordMergeVertices, recordMergeS
 
 export function createHalfSector(points: Point[], type: 'ceiling' | 'floor'): void {
   if (points.length < 3) return;
-  const hs: HalfSector = type === 'ceiling' ? { type, points } : { type, points };
+  const hs: HalfSector = type === 'ceiling'
+    ? { type, points, ceiling: 128, light: 160 }
+    : { type, points, floor:   0,   light: 160 };
   beginAction();
   const ref = mapRef('halfSectors').push(hs);
   record(`map/halfSectors/${ref.key}`, null, hs);

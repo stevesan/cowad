@@ -41,10 +41,8 @@ export interface Thing {
 }
 
 export type HalfSector =
-// TODO ceiling and floor should be height, and required
-// light should be required
-  | { type: 'ceiling'; points: Point[]; ceiling?: number; ceilTex?: string; light?: number }
-  | { type: 'floor';   points: Point[]; floor?: number;   floorTex?: string; light?: number };
+  | { type: 'ceiling'; points: Point[]; ceiling: number; ceilTex?: string; light: number }
+  | { type: 'floor';   points: Point[]; floor: number;   floorTex?: string; light: number };
 
 export interface MapData {
   vertices: Map<string, Vertex>;

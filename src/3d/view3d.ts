@@ -7,6 +7,8 @@ import { showToast } from '../ui/toast';
 import { placeThing } from '../map/mapActions';
 import { snap } from '../canvas/transforms';
 import { buildFloorsCeilings, buildWalls, buildThings, clearTexCache } from './buildGeometry';
+import { mergeHalfSectors } from '../export/halfSectorExport';
+import { createLiveContext } from '../map/exportableMap';
 import { pointInSector } from '../geometry/cycleFinder';
 import { beginAction, record, endAction } from '../history/undoRedo';
 import { openTextureBrowser } from '../ui/textureBrowser';
@@ -473,9 +475,10 @@ function rebuildScene(): void {
     }
   }
 
-  buildFloorsCeilings(sceneGroup);
-  buildWalls(sceneGroup);
-  buildThings(sceneGroup);
+  const m = mergeHalfSectors(maps.halfSectors) ?? createLiveContext();
+  buildFloorsCeilings(sceneGroup, m);
+  buildWalls(sceneGroup, m);
+  buildThings(sceneGroup, m);
 }
 
 // ── Camera positioning ──
