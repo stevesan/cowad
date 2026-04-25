@@ -74,6 +74,31 @@ export function segmentIntersectionPoint(
   return { x: ax + t * dx1, y: ay + t * dy1 };
 }
 
+/**
+ * Like segmentIntersectionPoint, but also detects when an endpoint of CD
+ * lies on the interior of AB (T-junction). t must be strictly in (0,1);
+ * u may be 0 or 1. Returns the exact CD endpoint coords when u snaps to 0/1
+ * so the caller can reuse the existing vertex without floating-point drift.
+ */
+export function segmentSplitPoint(
+  ax: number, ay: number, bx: number, by: number,
+  cx: number, cy: number, dx: number, dy: number
+): { x: number; y: number } | null {
+  const dx1 = bx - ax, dy1 = by - ay;
+  const dx2 = dx - cx, dy2 = dy - cy;
+  const denom = dx1 * dy2 - dy1 * dx2;
+  if (Math.abs(denom) < 1e-10) return null;
+  const t = ((cx - ax) * dy2 - (cy - ay) * dx2) / denom;
+  const u = ((cx - ax) * dy1 - (cy - ay) * dx1) / denom;
+  const EPS = 1e-9;
+  if (t <= EPS || t >= 1 - EPS) return null;    // must be on interior of AB
+  if (u < -EPS  || u > 1 + EPS)  return null;    // must be on CD (incl. endpoints)
+  // Snap to exact endpoint when u ≈ 0 or u ≈ 1 to avoid float drift
+  if (u <= EPS)        return { x: cx, y: cy };
+  if (u >= 1 - EPS)    return { x: dx, y: dy };
+  return { x: ax + t * dx1, y: ay + t * dy1 };
+}
+
 /** Returns the point index of the nearest vertex of the given HS within thresh, or null. */
 export function nearestHalfSectorVertex(wx: number, wy: number, thresh: number, hsId: string): number | null {
   const hs = maps.halfSectors.get(hsId);

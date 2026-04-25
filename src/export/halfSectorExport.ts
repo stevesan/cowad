@@ -1,6 +1,6 @@
 import { createCloneContext } from '../map/exportableMap';
 import { fixSectors } from '../map/drawSession';
-import { segmentIntersectionPoint } from '../geometry/hitTest';
+import { segmentSplitPoint } from '../geometry/hitTest';
 import { signedArea2 } from '../geometry/polygonMath';
 import type { HalfSector } from '../types';
 import type { ExportableMap } from '../map/exportableMap';
@@ -80,8 +80,8 @@ export function mergeHalfSectors(halfSectors: Map<string, HalfSector>): Exportab
     for (const seg of segs) {
       const splits: { t: number; vid: string }[] = [];
       for (const other of against) {
-        const pt = segmentIntersectionPoint(seg.ax, seg.ay, seg.bx, seg.by,
-                                            other.ax, other.ay, other.bx, other.by);
+        const pt = segmentSplitPoint(seg.ax, seg.ay, seg.bx, seg.by,
+                                     other.ax, other.ay, other.bx, other.by);
         if (!pt) continue;
         const len = Math.hypot(seg.bx - seg.ax, seg.by - seg.ay);
         const t   = len > 0 ? Math.hypot(pt.x - seg.ax, pt.y - seg.ay) / len : 0;
