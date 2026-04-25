@@ -166,12 +166,16 @@ function drawHalfSectors(): void {
 
     // Draw vertices when selected so they can be dragged
     if (isSel) {
-      ctx.fillStyle = '#ff0';
-      for (const pt of hs.points) {
-        const sp = w2s(pt.x, pt.y);
-        ctx.beginPath();
-        ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
-        ctx.fill();
+      for (let i = 0; i < hs.points.length; i++) {
+        const sp = w2s(hs.points[i].x, hs.points[i].y);
+        const vtxHov = hovered?.type === 'halfSectorVertex' && hovered.id === `${hsId}:${i}`;
+        if (vtxHov) {
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+          ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(sp.x, sp.y, VERTEX_PICK_PX, 0, Math.PI * 2); ctx.stroke();
+        }
+        ctx.fillStyle = vtxHov ? '#fff' : '#ff0';
+        ctx.beginPath(); ctx.arc(sp.x, sp.y, vtxHov ? 4 : 3, 0, Math.PI * 2); ctx.fill();
       }
     }
   });

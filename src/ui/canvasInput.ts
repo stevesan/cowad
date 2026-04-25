@@ -203,11 +203,14 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
 
     if (tool === 'select') {
       const wx = mouseWorld.x, wy = mouseWorld.y;
-      const vid = nearestVertex(wx, wy, VERTEX_PICK_PX / zoom);
-      const tid = vid === null ? nearestThing(wx, wy, THING_PICK_PX / zoom) : null;
-      const lid = vid === null && tid === null ? nearestLinedef(wx, wy, LINEDEF_PICK_PX / zoom) : null;
+      const selHsIdHov = selected?.type === 'halfSector' ? selected.id : null;
+      const hsVtxHovIdx = selHsIdHov !== null ? nearestHalfSectorVertex(wx, wy, VERTEX_PICK_PX / zoom, selHsIdHov) : null;
+      const vid = hsVtxHovIdx === null ? nearestVertex(wx, wy, VERTEX_PICK_PX / zoom) : null;
+      const tid = hsVtxHovIdx === null && vid === null ? nearestThing(wx, wy, THING_PICK_PX / zoom) : null;
+      const lid = hsVtxHovIdx === null && vid === null && tid === null ? nearestLinedef(wx, wy, LINEDEF_PICK_PX / zoom) : null;
       let h: Selection | null = null;
-      if (vid !== null) h = { type: 'vertex', id: vid };
+      if (hsVtxHovIdx !== null && selHsIdHov !== null) h = { type: 'halfSectorVertex', id: `${selHsIdHov}:${hsVtxHovIdx}` };
+      else if (vid !== null) h = { type: 'vertex', id: vid };
       else if (tid !== null) h = { type: 'thing', id: tid };
       else if (lid !== null) h = { type: 'linedef', id: lid };
       else {

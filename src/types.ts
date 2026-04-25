@@ -65,8 +65,8 @@ export interface DrawVertex {
 }
 
 export interface Selection {
-  type: 'vertex' | 'linedef' | 'sector' | 'thing' | 'halfSector';
-  id: string;
+  type: 'vertex' | 'linedef' | 'sector' | 'thing' | 'halfSector' | 'halfSectorVertex';
+  id: string; // for halfSectorVertex: "${hsId}:${pointIndex}"
 }
 
 export interface DragState {
