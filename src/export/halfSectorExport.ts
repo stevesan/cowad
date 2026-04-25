@@ -1,6 +1,6 @@
 import { createCloneContext } from '../map/exportableMap';
 import { fixSectors } from '../map/drawSession';
-import { segmentSplitPoint } from '../geometry/hitTest';
+import { segmentSplitPoint, pointInPoly } from '../geometry/hitTest';
 import { signedArea2 } from '../geometry/polygonMath';
 import type { HalfSector } from '../types';
 import type { ExportableMap } from '../map/exportableMap';
@@ -27,10 +27,44 @@ export function mergeHalfSectors(halfSectors: Map<string, HalfSector>): Exportab
 
   const clone = createCloneContext();
 
-  // Pre-compute winding for each HS polygon:
-  // signedArea2 > 0  →  interior is on the LEFT of each directed edge in polygon order
-  //                 →  the FRONT sidedef (face traversed v1→v2) is interior.
-  // signedArea2 < 0  →  interior is on the RIGHT  →  BACK sidedef is interior.
+  // ── Pre-compute HS containment ────────────────────────────────────────────
+  // hsContainedBy[A] = set of HS IDs whose polygon contains A's first vertex.
+  // Valid because if A and B don't cross, one is either fully inside the other
+  // or fully outside — a single point test distinguishes them.
+  const hsContainedBy = new Map<string, Set<string>>();
+  for (const [hsId] of halfSectors) hsContainedBy.set(hsId, new Set());
+  for (const [hsIdA, hsA] of halfSectors) {
+    for (const [hsIdB, hsB] of halfSectors) {
+      if (hsIdA === hsIdB) continue;
+      if (pointInPoly(hsA.points[0].x, hsA.points[0].y, hsB.points)) {
+        hsContainedBy.get(hsIdA)!.add(hsIdB);
+      }
+    }
+  }
+
+  // Containment depth: 0 = outermost, 1 = inside a level-0 HS, etc.
+  // Used to run fixSectors level-by-level so inner HS linedefs are always
+  // processed after the outer HS's sector already exists in the clone.
+  const hsLevel = new Map<string, number>();
+  for (const [hsId] of halfSectors) hsLevel.set(hsId, 0);
+  let levelChanged = true;
+  while (levelChanged) {
+    levelChanged = false;
+    for (const [hsId, containers] of hsContainedBy) {
+      let maxContainerLevel = -1;
+      for (const cid of containers) maxContainerLevel = Math.max(maxContainerLevel, hsLevel.get(cid) ?? 0);
+      const newLevel = maxContainerLevel + 1;
+      if (newLevel > (hsLevel.get(hsId) ?? 0)) {
+        hsLevel.set(hsId, newLevel);
+        levelChanged = true;
+      }
+    }
+  }
+
+  // Pre-compute polygon winding for each HS:
+  // signedArea2 > 0 → interior is on the LEFT of each directed edge
+  //               → the FRONT sidedef (face traversed v1→v2) is interior.
+  // signedArea2 < 0 → interior is on the RIGHT → BACK sidedef is interior.
   const hsInteriorFront = new Map<string, boolean>();
   for (const [hsId, hs] of halfSectors) {
     hsInteriorFront.set(hsId, signedArea2(hs.points) > 0);
@@ -44,7 +78,6 @@ export function mergeHalfSectors(halfSectors: Map<string, HalfSector>): Exportab
     const pts = hs.points;
     if (pts.length < 3) continue;
 
-    // Reuse coincident vertices already in the clone, or create new ones.
     const vIds: string[] = [];
     for (const pt of pts) {
       let vid: string | null = null;
@@ -68,18 +101,16 @@ export function mergeHalfSectors(halfSectors: Map<string, HalfSector>): Exportab
 
   if (allSegments.length === 0) return null;
 
-  // ── Step 2: Split ceiling/floor HS segments at mutual intersections ───────
+  // ── Step 2: Split all HS segments at mutual intersections ─────────────────
+  // Split every segment against every segment from a DIFFERENT HS.
+  // This handles crossing (ceil×floor, ceil×ceil, floor×floor) and T-junctions.
 
-  const ceilSegs  = allSegments.filter(s => halfSectors.get(s.hsId)!.type === 'ceiling');
-  const floorSegs = allSegments.filter(s => halfSectors.get(s.hsId)!.type === 'floor');
-
-  /** Split each segment in `segs` at intersections with `against`,
-   *  carrying the originating hsId through to each sub-segment. */
   function splitAtIntersections(segs: HsSegment[], against: HsSegment[]): { v1: string; v2: string; hsId: string }[] {
     const result: { v1: string; v2: string; hsId: string }[] = [];
     for (const seg of segs) {
       const splits: { t: number; vid: string }[] = [];
       for (const other of against) {
+        if (other.hsId === seg.hsId) continue; // never split against own polygon
         const pt = segmentSplitPoint(seg.ax, seg.ay, seg.bx, seg.by,
                                      other.ax, other.ay, other.bx, other.by);
         if (!pt) continue;
@@ -104,16 +135,14 @@ export function mergeHalfSectors(halfSectors: Map<string, HalfSector>): Exportab
     return result;
   }
 
-  const splitCeil  = splitAtIntersections(ceilSegs,  floorSegs);
-  const splitFloor = splitAtIntersections(floorSegs, ceilSegs);
+  const splitAll = splitAtIntersections(allSegments, allSegments);
 
-  // ── Step 3: Add linedefs for all HS segments ──────────────────────────────
-  // Track ldId → HS info (which side is interior).
+  // ── Step 3: Add linedefs, build ldToHsInfo and per-level active-line sets ──
 
-  const activeLines = new Set<string>();
   const ldToHsInfo = new Map<string, LdHsInfo>();
+  const activeLinesPerLevel = new Map<number, Set<string>>();
 
-  for (const { v1, v2, hsId } of [...splitCeil, ...splitFloor]) {
+  for (const { v1, v2, hsId } of splitAll) {
     if (v1 === v2) continue;
 
     let existingLdId: string | null = null;
@@ -126,7 +155,6 @@ export function mergeHalfSectors(halfSectors: Map<string, HalfSector>): Exportab
     const baseInteriorFront = hsInteriorFront.get(hsId)!;
 
     if (existingLdId) {
-      // Direction may be reversed relative to the HS polygon order.
       ldToHsInfo.set(existingLdId, {
         hsId,
         interiorSideFront: existingSameDir ? baseInteriorFront : !baseInteriorFront,
@@ -135,20 +163,29 @@ export function mergeHalfSectors(halfSectors: Map<string, HalfSector>): Exportab
     }
 
     const ldId = clone.pushLinedef({ v1, v2, flags: 1, frontSide: null, backSide: null });
-    activeLines.add(ldId);
     ldToHsInfo.set(ldId, { hsId, interiorSideFront: baseInteriorFront });
+
+    const level = hsLevel.get(hsId) ?? 0;
+    if (!activeLinesPerLevel.has(level)) activeLinesPerLevel.set(level, new Set());
+    activeLinesPerLevel.get(level)!.add(ldId);
   }
 
-  if (activeLines.size === 0) return clone;
+  if (activeLinesPerLevel.size === 0) return clone;
 
-  // ── Step 4: Run fixSectors to create sectors in HS-bounded regions ────────
+  // ── Step 4: Run fixSectors level-by-level (outermost first) ───────────────
+  // Processing outermost HSes first ensures their sectors exist before inner
+  // HSes run fixSectors — so inner HS linedefs correctly subdivide the outer
+  // sector rather than creating disconnected overlapping sectors.
 
   const existingSectorIds = new Set(clone.sectors.keys());
-  fixSectors(activeLines, clone);
+  const maxLevel = Math.max(...activeLinesPerLevel.keys());
+  for (let lv = 0; lv <= maxLevel; lv++) {
+    const lines = activeLinesPerLevel.get(lv);
+    if (lines && lines.size > 0) fixSectors(lines, clone);
+  }
 
   // ── Step 5: Apply HS properties to newly-created sectors ──────────────────
 
-  // Build sidedef → linedef reverse index once.
   const sdToLd = new Map<string, string>();
   for (const [ldId, ld] of clone.linedefs) {
     if (ld.frontSide) sdToLd.set(ld.frontSide, ldId);
@@ -183,6 +220,19 @@ export function mergeHalfSectors(halfSectors: Map<string, HalfSector>): Exportab
       }
     }
     if (candidateHsIds.size === 0) continue;
+
+    // Expand candidates transitively: if sector is inside HS A and A ⊂ B,
+    // then the sector is also inside B.
+    const queue = [...candidateHsIds];
+    while (queue.length) {
+      const hsId = queue.shift()!;
+      for (const parentId of hsContainedBy.get(hsId) ?? []) {
+        if (!candidateHsIds.has(parentId)) {
+          candidateHsIds.add(parentId);
+          queue.push(parentId);
+        }
+      }
+    }
 
     // Ceiling and floor HSes are independent — apply the smallest of each type.
     let bestCeilHs: HalfSector | null = null, bestCeilArea = Infinity;
