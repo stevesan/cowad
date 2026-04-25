@@ -74,6 +74,18 @@ export function segmentIntersectionPoint(
   return { x: ax + t * dx1, y: ay + t * dy1 };
 }
 
+/** Returns the point index of the nearest vertex of the given HS within thresh, or null. */
+export function nearestHalfSectorVertex(wx: number, wy: number, thresh: number, hsId: string): number | null {
+  const hs = maps.halfSectors.get(hsId);
+  if (!hs) return null;
+  let bestIdx: number | null = null, bestD = thresh;
+  for (let i = 0; i < hs.points.length; i++) {
+    const d = Math.hypot(hs.points[i].x - wx, hs.points[i].y - wy);
+    if (d < bestD) { bestD = d; bestIdx = i; }
+  }
+  return bestIdx;
+}
+
 /** Returns the ID of the smallest half-sector polygon containing (wx, wy), or null. */
 export function halfSectorAt(wx: number, wy: number): string | null {
   let bestId: string | null = null;

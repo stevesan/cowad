@@ -163,6 +163,17 @@ function drawHalfSectors(): void {
     ctx.closePath();
     ctx.stroke();
     ctx.setLineDash([]);
+
+    // Draw vertices when selected so they can be dragged
+    if (isSel) {
+      ctx.fillStyle = '#ff0';
+      for (const pt of hs.points) {
+        const sp = w2s(pt.x, pt.y);
+        ctx.beginPath();
+        ctx.arc(sp.x, sp.y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   });
 }
 

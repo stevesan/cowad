@@ -8,7 +8,7 @@ import {
 } from '../state/appState';
 import { db, mapRef } from '../config/firebase';
 import { s2w, snap } from '../canvas/transforms';
-import { nearestVertex, nearestLinedef, nearestThing, halfSectorAt } from '../geometry/hitTest';
+import { nearestVertex, nearestLinedef, nearestThing, halfSectorAt, nearestHalfSectorVertex } from '../geometry/hitTest';
 import { VERTEX_PICK_PX, LINEDEF_PICK_PX, THING_PICK_PX } from '../config/ux';
 import { buildSectorLoopIds, pointInSector } from '../geometry/cycleFinder';
 import { placeThing, deleteSelected, deleteMultiSelected, splitLinedefAtPoint, mergeVertices, mergeSectors, bridgeLinedefs, createHalfSector } from '../map/mapActions';
@@ -73,9 +73,11 @@ function linedefSide(lid: string, wx: number, wy: number): 'front' | 'back' | nu
 let dragOrigin: Record<string, any> | null = null;
 let dragOffset = { x: 0, y: 0 };
 
-// Half-sector drag state
+// Half-sector drag state (whole-HS move and per-vertex move)
 let hsDragId: string | null = null;
 let hsDragOrigin: HalfSector | null = null;
+let hsVtxDrag: { hsId: string; idx: number } | null = null;
+let hsVtxDragOrigin: HalfSector | null = null;
 
 // Multi-drag state
 let multiDragOrigins: Map<string, { x: number; y: number }> | null = null;
@@ -168,6 +170,14 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       return;
     }
 
+    if (hsVtxDrag && hsVtxDragOrigin) {
+      const rawX = mouseWorld.x + dragOffset.x, rawY = mouseWorld.y + dragOffset.y;
+      const x = e.altKey ? rawX : snap(rawX), y = e.altKey ? rawY : snap(rawY);
+      const points = hsVtxDragOrigin.points.map((p, i) => i === hsVtxDrag!.idx ? { x, y } : { ...p });
+      mapRef('halfSectors').child(hsVtxDrag.hsId).update({ points });
+      return;
+    }
+
     if (hsDragId && hsDragOrigin) {
       const rawX = mouseWorld.x + dragOffset.x, rawY = mouseWorld.y + dragOffset.y;
       const anchorX = e.altKey ? rawX : snap(rawX);
@@ -251,7 +261,17 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
       const tid = nearestThing(wx, wy, THING_PICK_PX / zoom);
       const lid = nearestLinedef(wx, wy, LINEDEF_PICK_PX / zoom);
 
-      if (vid !== null && e.shiftKey) {
+      const selHsId = selected?.type === 'halfSector' ? selected.id : null;
+      const hsVtxIdx = selHsId !== null ? nearestHalfSectorVertex(wx, wy, VERTEX_PICK_PX / zoom, selHsId) : null;
+
+      if (hsVtxIdx !== null && selHsId !== null) {
+        const hs = maps.halfSectors.get(selHsId);
+        if (hs) {
+          hsVtxDrag = { hsId: selHsId, idx: hsVtxIdx };
+          hsVtxDragOrigin = { ...hs, points: hs.points.map(p => ({ ...p })) };
+          dragOffset = { x: hs.points[hsVtxIdx].x - wx, y: hs.points[hsVtxIdx].y - wy };
+        }
+      } else if (vid !== null && e.shiftKey) {
         // Shift+click: toggle vertex in multiSelected
         const next = multiSelectType === 'vertex' ? new Set(multiSelected) : new Set<string>();
         if (selected?.type === 'vertex' && !next.has(selected.id)) next.add(selected.id);
@@ -393,6 +413,23 @@ export function initCanvasInput(canvas: HTMLCanvasElement): void {
         }
       }
       draw();
+      return;
+    }
+
+    // Finalize HS vertex drag
+    if (hsVtxDrag && hsVtxDragOrigin) {
+      const current = maps.halfSectors.get(hsVtxDrag.hsId);
+      if (current) {
+        const orig = hsVtxDragOrigin.points[hsVtxDrag.idx];
+        const cur  = current.points[hsVtxDrag.idx];
+        if (orig.x !== cur.x || orig.y !== cur.y) {
+          beginAction();
+          record(`map/halfSectors/${hsVtxDrag.hsId}`, hsVtxDragOrigin, { ...current });
+          endAction();
+        }
+      }
+      hsVtxDrag = null;
+      hsVtxDragOrigin = null;
       return;
     }
 
